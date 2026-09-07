@@ -1,0 +1,11 @@
+torch>=2.3
+flwr[simulation]==1.36.0  # pinned: fl/ code uses start_simulation(), removed in some later versions
+opacus>=1.5
+ucimlrepo>=0.0.7
+scikit-learn>=1.4
+pandas>=2.2
+numpy>=1.26
+matplotlib>=3.8
+seaborn>=0.13
+jupyter>=1.0
+medmnist>=3.0  # stretch goal only (PneumoniaMNIST)

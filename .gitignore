@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+.DS_Store
+
+# raw/downloaded data and large artifacts (keep results/ summaries, not raw data)
+data/raw/
+data/*.csv
+data/*.parquet
+results/raw/
+demo/hospital_data/
+*.pt
+*.ckpt
+
+# secrets / local config
+.env
