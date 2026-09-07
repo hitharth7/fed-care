@@ -46,7 +46,7 @@ After `--rounds` rounds (default 10), everything exits cleanly on its own.
 `run_server.py` also starts a small local web server showing a live visual dashboard — open **http://localhost:8090** in a browser once the server is running (works before the hospitals connect too; it'll just show 5 hospitals "waiting to connect").
 
 ![Dashboard preview](dashboard_preview.png)
-*Preview from an actual run (round 5/100) — every number here is real, live state from the server, not staged. Hospital 1's accuracy showing red/34.7% is the same collapsed-accuracy finding documented in `paper/report.md`.*
+*Preview from an actual run with the drift-aware controller active (round 21/50) — every number here is real, live state from the server, not staged. Hospital 1's accuracy showing red/34.7% is the same collapsed-accuracy finding documented in `paper/report.md`.*
 
 It shows, updating in real time as the real demo runs:
 - A central "Global Model" node with 5 hospital nodes around it, connected lines that light up when a hospital sends weights
@@ -59,6 +59,28 @@ This is **read-only** — it displays `demo/dashboard/dashboard_state.json`, whi
 To disable it (e.g. running headless on a server with no browser): `python demo/run_server.py --no-dashboard`. To use a different port if 8090 is taken: `--dashboard-port 8091`.
 
 **One thing worth knowing before you present it**: in this project's `alpha=0.5` non-IID setup, hospital 1's accuracy typically stays flat around 34-35% every round (color-coded red on the dashboard) — that's not a dashboard bug, it's the real, documented finding from `paper/report.md` (vanilla FedAvg collapses that hospital to majority-class prediction). If a panel member asks, that's your cue to talk about the FedProx investigation.
+
+## The drift-aware controller
+
+This is now ON by default (`fl/drift_controller.py`) — the "Selected New Idea" from `fedcare_master_project_guide.md` §6, previously deferred as a stretch goal, now built and running live in the demo. Each hospital card shows a "Controller" section with:
+
+- **Drift** — how far that hospital's last local update moved from the shared model it started the round with.
+- **Overfit gap** — that hospital's own train accuracy minus its own val accuracy right after training. A cheap always-available proxy for membership-inference leakage risk (running the real attack, like Step 8 does, every single round would be far too slow for a live demo).
+- **Stability pull (mu)** — the FedProx proximal-term strength the controller has assigned this hospital for the *next* round. Rises when drift is high (pulls a diverging hospital back toward the group, and down-weights its contribution to that round's aggregation); falls when drift is low (a well-aligned hospital gets more room to personalize).
+- **Target eps/round** — the DP privacy target the controller wants the *next* round to cost. Tightens (drops) when the overfit gap looks high; relaxes back toward the baseline when it doesn't.
+- **Cumulative eps (all rounds)** — the *true*, composed privacy cost across every round so far, fed through the same Opacus accountant discipline Step 7 uses. This number only ever grows and is deliberately shown separately from "target eps/round" — conflating a per-round target with the real cumulative cost is exactly the kind of DP accounting mistake the project has been careful to avoid throughout (see `PROJECT_GUIDE.md` §5.6).
+- The plain-English reason for the controller's latest decision (e.g. *"high drift (22.8%) -> raised stability pull (mu) to 0.016, down-weighted this round's contribution"*).
+
+Rules are deliberately simple fixed thresholds, not learned — see the docstring at the top of `fl/drift_controller.py` for the exact numbers and reasoning.
+
+**To compare with/without the controller**, run the server with `--no-adaptive` (and pass `--no-adaptive` to every hospital too) for a plain-FedAvg baseline run, then run it again without the flag — useful if a panel member asks "what does this actually change?"
+
+```bash
+python demo/run_server.py --no-adaptive
+python demo/run_hospital.py --hospital-id 0 --no-adaptive   # ...and so on for each hospital
+```
+
+**Honest scope note**: this is validated as a real, correctly-functioning system (tested live over 20+ rounds, including that DP epsilon composes correctly across rounds and that drift/mu/aggregation-weight adjustments behave as designed) — but it has not yet been run through the same rigorous, multi-seed research comparison as the core 3-axis pipeline (Steps 5-8). If asked whether it *improves* outcomes, the honest answer is "it demonstrably reacts correctly to what it observes; whether that reaction improves worst-client accuracy or leakage over the static approach is the natural next experiment, not yet run."
 
 ## Running across multiple machines (more visually convincing, more setup risk)
 
@@ -86,6 +108,8 @@ Recommendation: **rehearse this at least once before presenting** — multi-mach
 - *"You can see each hospital only trains on its own file — hospital 3 has ~94,000 records, hospital 4 has ~2,500 — and only ever sends model weights over the socket, never the underlying patient data."*
 - *"The research results in the paper come from running this same logic hundreds of times faster in Flower's simulation mode — this networked version is slower but makes the architecture visible."*
 - *"The dashboard is just a live view of the real server's state — it's reading the same JSON the terminal is printing, rendered nicer for the screen."*
+- *"The controller is rule-based, not a black box — it watches two signals per hospital, drift and an overfitting proxy, and reacts with fixed thresholds. You can see exactly why it made each decision in the 'reason' text on each card."*
+- *"Cumulative epsilon keeps growing every round, on purpose — that's correct DP behavior, privacy cost composes over time. The per-round target and the true cumulative cost are shown as two separate numbers specifically so the two aren't confused."*
 
 ## Rehearse before you present
 

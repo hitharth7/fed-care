@@ -47,6 +47,7 @@
   .status-pill .dot{width:9px;height:9px;border-radius:50%;background:var(--grey); transition:background .3s;}
   .status-pill.training .dot{background:var(--amber); box-shadow:0 0 10px var(--amber); animation:pulse 1.2s infinite;}
   .status-pill.done .dot{background:var(--green); box-shadow:0 0 10px var(--green);}
+  .status-pill.adaptive .dot{background:#a78bfa; box-shadow:0 0 10px #a78bfa;}
   .status-pill b{color:var(--text); font-weight:600;}
 
   .progress-wrap{margin:6px 0 26px;}
@@ -59,9 +60,9 @@
 
   .stage{
     position:relative;
-    height:560px;
-    max-width:920px;
-    margin:0 auto 34px;
+    height:900px;
+    max-width:1180px;
+    margin:0 auto 200px;
   }
   svg.links{position:absolute; inset:0; width:100%; height:100%; overflow:visible;}
   .link-line{stroke:rgba(255,255,255,0.14); stroke-width:2; fill:none; transition:stroke .4s;}
@@ -89,7 +90,7 @@
   .center-node .round{font-size:11px; color:var(--muted); margin-top:2px;}
 
   .hospital{
-    position:absolute; width:172px;
+    position:absolute; width:198px;
     background:var(--panel); border:1px solid var(--panel-border);
     border-radius:16px; padding:14px 14px 12px;
     backdrop-filter: blur(6px);
@@ -113,6 +114,16 @@
   .hospital .phase .d{width:6px;height:6px;border-radius:50%;background:var(--grey);}
   .hospital .phase.sent .d{background:var(--cyan); box-shadow:0 0 6px var(--cyan); animation:pulse 1s infinite;}
   .hospital .phase.evaluated .d{background:var(--green); box-shadow:0 0 6px var(--green);}
+
+  .hospital .controller{
+    margin-top:10px; padding-top:10px; border-top:1px dashed rgba(255,255,255,0.09);
+  }
+  .hospital .controller .stats{display:flex; gap:8px; margin-bottom:6px;}
+  .hospital .controller .stat{flex:1; text-align:center; padding:5px 4px; border-radius:8px; background:rgba(255,255,255,0.04);}
+  .hospital .controller .stat .label{font-size:8.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px;}
+  .hospital .controller .stat .val{font-size:12.5px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:1px;}
+  .hospital .controller .stat.warn .val{color:var(--amber);}
+  .hospital .controller .reason{font-size:10px; color:var(--muted); line-height:1.4;}
 
   .panels{display:grid; grid-template-columns:1.3fr 1fr; gap:20px; max-width:1180px; margin:0 auto;}
   @media (max-width:860px){ .panels{grid-template-columns:1fr;} }
@@ -146,7 +157,10 @@
         <p>5 hospitals training one shared diagnostic model, without sharing patient data</p>
       </div>
     </div>
-    <div class="status-pill" id="statusPill"><span class="dot"></span><span id="statusText">Connecting…</span></div>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <div class="status-pill" id="controllerPill" style="display:none;"><span class="dot"></span><span id="controllerText"></span></div>
+      <div class="status-pill" id="statusPill"><span class="dot"></span><span id="statusText">Connecting…</span></div>
+    </div>
   </header>
 
   <div class="progress-wrap">
@@ -202,7 +216,7 @@ function accClass(x){
 function layout(stageEl, n){
   const rect = stageEl.getBoundingClientRect();
   const cx = rect.width/2, cy = rect.height/2;
-  const r = Math.min(rect.width, rect.height)/2 - 95;
+  const r = Math.min(rect.width, rect.height)/2 - 60;
   const pts = [];
   for (let i=0;i<n;i++){
     const angle = (-90 + i*(360/n)) * Math.PI/180;
@@ -253,11 +267,12 @@ function ensureCards(stageEl, hospitals){
         </div>
         <div class="acc-row"><div class="acc" data-acc>—</div></div>
         <div class="phase" data-phase><span class="d"></span><span data-phase-text>waiting</span></div>
+        <div class="controller" data-controller hidden></div>
       `;
       document.getElementById("stage").appendChild(card);
       cardEls[h.id] = card;
     }
-    card.style.left = (p.x - 86) + "px";
+    card.style.left = (p.x - 99) + "px";
     card.style.top = (p.y - 58) + "px";
     card.style.borderColor = h.phase !== "waiting" ? color + "55" : "";
     if (h.phase !== "waiting") card.style.boxShadow = `0 0 0 1px ${color}22, 0 8px 24px rgba(0,0,0,0.35)`;
@@ -275,6 +290,30 @@ function ensureCards(stageEl, hospitals){
     phaseText.textContent = h.phase === "waiting" ? "waiting to connect"
       : h.phase === "sent" ? "sent weights to server"
       : "evaluated latest global model";
+
+    const ctrlEl = card.querySelector("[data-controller]");
+    const c = h.controller;
+    if (c && c.mu !== null && c.mu !== undefined) {
+      ctrlEl.hidden = false;
+      const driftWarn = c.drift !== null && c.drift > 0.20;
+      const overfitWarn = c.overfit_gap !== null && c.overfit_gap > 0.10;
+      ctrlEl.innerHTML = `
+        <div class="stats">
+          <div class="stat${driftWarn ? " warn" : ""}"><div class="label">Drift</div><div class="val">${fmtPct(c.drift)}</div></div>
+          <div class="stat${overfitWarn ? " warn" : ""}"><div class="label">Overfit gap</div><div class="val">${fmtPct(c.overfit_gap)}</div></div>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="label">Stability pull (mu)</div><div class="val">${c.mu.toFixed(3)}</div></div>
+          <div class="stat"><div class="label">Target eps/round</div><div class="val">${c.target_epsilon.toFixed(2)}</div></div>
+        </div>
+        <div class="stats">
+          <div class="stat" style="flex:1 1 100%;" title="True composed privacy cost across every round so far -- always grows, unlike the per-round target above"><div class="label">Cumulative eps (all rounds)</div><div class="val">${c.cumulative_epsilon === null || c.cumulative_epsilon === undefined ? "—" : c.cumulative_epsilon.toFixed(2)}</div></div>
+        </div>
+        <div class="reason">${c.action || ""}</div>
+      `;
+    } else {
+      ctrlEl.hidden = true;
+    }
 
     if (prevPhase[h.id] && prevPhase[h.id] !== h.phase){
       card.classList.add("flash");
@@ -335,6 +374,15 @@ async function tick(){
     statusText.textContent = s.status === "connecting" ? "Waiting for hospitals to connect"
       : s.status === "training" ? "Training in progress"
       : "Training complete ✓";
+
+    const controllerPill = document.getElementById("controllerPill");
+    if (s.adaptive) {
+      controllerPill.style.display = "flex";
+      controllerPill.className = "status-pill adaptive";
+      document.getElementById("controllerText").textContent = "🎛 Drift-aware controller: active";
+    } else {
+      controllerPill.style.display = "none";
+    }
 
     const pct = s.total_rounds ? Math.min(100, (s.round / s.total_rounds) * 100) : 0;
     document.getElementById("progressFill").style.width = pct + "%";

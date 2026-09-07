@@ -67,8 +67,13 @@ class NarratedHospitalClient(DiabetesFlowerClient):
     def fit(self, parameters, config):
         self.round_num += 1
         print(f"\n[Hospital {self.hospital_id}] Round {self.round_num}: received the current global model from the server.")
+        if "mu" in config or "target_epsilon" in config:
+            print(f"[Hospital {self.hospital_id}] Controller-assigned settings this round: mu={config.get('mu', 0):.4f}, target_epsilon={config.get('target_epsilon', 'inf')}")
         print(f"[Hospital {self.hospital_id}] Training locally on my {self.n_local_train} patient records -- this data never leaves this process.")
         result = super().fit(parameters, config)
+        params, n, metrics = result
+        if "drift" in metrics:
+            print(f"[Hospital {self.hospital_id}] Local update drift from global model: {metrics['drift']:.1%}  |  train-vs-val overfit gap: {metrics['overfit_gap']:.1%}")
         print(f"[Hospital {self.hospital_id}] Local training done -- sending updated model WEIGHTS (not data) back to the server.")
         return result
 
@@ -84,6 +89,11 @@ def main():
     parser.add_argument("--server", default="127.0.0.1:8080")
     parser.add_argument("--local-epochs", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument(
+        "--no-adaptive",
+        action="store_true",
+        help="don't report drift/overfit-gap metrics -- use only if the server was also started with --no-adaptive",
+    )
     args = parser.parse_args()
 
     device = get_device()
@@ -105,6 +115,7 @@ def main():
         device,
         local_epochs=args.local_epochs,
         lr=args.lr,
+        track_controller_metrics=not args.no_adaptive,
     )
 
     fl.client.start_client(server_address=args.server, client=client.to_client())

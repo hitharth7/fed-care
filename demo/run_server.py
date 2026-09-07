@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import flwr as fl
 
+from fl.drift_controller import DriftAwareFedAvg
 from fl.strategies import weighted_average
 
 DASHBOARD_DIR = Path(__file__).resolve().parent / "dashboard"
@@ -41,19 +42,57 @@ _state = {
     "status": "connecting",  # connecting -> training -> done
     "round": 0,
     "total_rounds": 0,
-    "hospitals": {},  # id(str) -> {id, n_train, n_val, accuracy, auc, phase}
+    "adaptive": False,  # whether the drift-aware controller is active this run
+    "hospitals": {},  # id(str) -> {id, n_train, n_val, accuracy, auc, phase, controller:{...}}
     "global_accuracy_history": [],  # [{round, accuracy}]
     "events": [],  # rolling narration log, most recent last
 }
 
+_DEFAULT_CONTROLLER = {
+    "mu": None, "target_epsilon": None, "cumulative_epsilon": None,
+    "drift": None, "overfit_gap": None, "action": None,
+}
 
-def _init_state(num_hospitals: int, total_rounds: int) -> None:
+
+def _init_state(num_hospitals: int, total_rounds: int, adaptive: bool) -> None:
     with _state_lock:
         _state["total_rounds"] = total_rounds
+        _state["adaptive"] = adaptive
         _state["hospitals"] = {
-            str(i): {"id": i, "n_train": None, "n_val": None, "accuracy": None, "auc": None, "phase": "waiting"}
+            str(i): {
+                "id": i, "n_train": None, "n_val": None, "accuracy": None, "auc": None, "phase": "waiting",
+                "controller": dict(_DEFAULT_CONTROLLER),
+            }
             for i in range(num_hospitals)
         }
+    _write_state()
+
+
+def _on_controller_decision(state) -> None:
+    """Callback wired into DriftAwareFedAvg -- fires once per hospital per
+    round, right after the controller updates that hospital's settings for
+    next round. Mirrors the real controller state into the dashboard.
+
+    target_epsilon and cumulative_epsilon are deliberately two different
+    numbers, both shown: target_epsilon is what the controller wants THIS
+    round to cost (it can go up or down round to round); cumulative_epsilon
+    is the true composed privacy cost across every round so far, which
+    only ever grows. Showing only the first would repeat exactly the kind
+    of misleading-epsilon mistake Step 7's privacy/dp.py was built to
+    avoid -- so it isn't shortcut here either.
+    """
+    cumulative_epsilon = state.cumulative_epsilon() if state.dp_history else None
+    with _state_lock:
+        h = _state["hospitals"].setdefault(str(state.hospital_id), {"id": state.hospital_id})
+        h["controller"] = {
+            "mu": state.mu,
+            "target_epsilon": state.target_epsilon,
+            "cumulative_epsilon": cumulative_epsilon,
+            "drift": state.last_drift,
+            "overfit_gap": state.last_overfit_gap,
+            "action": state.last_action,
+        }
+    _add_event(f"Controller (Hospital {state.hospital_id}): {state.last_action}")
     _write_state()
 
 
@@ -81,7 +120,7 @@ def start_dashboard_server(port: int) -> None:
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
 
-def make_narrated_strategy(num_hospitals: int) -> fl.server.strategy.FedAvg:
+def make_narrated_strategy(num_hospitals: int, adaptive: bool, base_mu: float, base_epsilon: float) -> fl.server.strategy.FedAvg:
     def fit_aggregation(metrics):
         with _state_lock:
             _state["status"] = "training"
@@ -127,7 +166,7 @@ def make_narrated_strategy(num_hospitals: int) -> fl.server.strategy.FedAvg:
         _write_state()
         return agg
 
-    return fl.server.strategy.FedAvg(
+    common_kwargs = dict(
         fraction_fit=1.0,
         fraction_evaluate=1.0,
         min_fit_clients=num_hospitals,
@@ -136,6 +175,11 @@ def make_narrated_strategy(num_hospitals: int) -> fl.server.strategy.FedAvg:
         fit_metrics_aggregation_fn=fit_aggregation,
         evaluate_metrics_aggregation_fn=evaluate_aggregation,
     )
+    if adaptive:
+        return DriftAwareFedAvg(
+            base_mu=base_mu, base_epsilon=base_epsilon, on_decision=_on_controller_decision, **common_kwargs
+        )
+    return fl.server.strategy.FedAvg(**common_kwargs)
 
 
 def main():
@@ -149,16 +193,26 @@ def main():
     parser.add_argument("--num-hospitals", type=int, default=5)
     parser.add_argument("--dashboard-port", type=int, default=8090)
     parser.add_argument("--no-dashboard", action="store_true", help="disable the local live dashboard web server")
+    parser.add_argument(
+        "--no-adaptive",
+        action="store_true",
+        help="disable the drift-aware controller and run plain FedAvg instead (for a before/after comparison)",
+    )
+    parser.add_argument("--base-mu", type=float, default=0.01, help="starting FedProx mu the controller adjusts from")
+    parser.add_argument("--base-epsilon", type=float, default=8.0, help="starting DP target epsilon the controller adjusts from")
     args = parser.parse_args()
+    adaptive = not args.no_adaptive
 
     port = args.address.split(":")[-1]
     print(f"Central server starting on {args.address} -- waiting for {args.num_hospitals} hospitals to connect...")
+    print(f"Drift-aware controller: {'ON' if adaptive else 'OFF (plain FedAvg)'}")
     print(f"In {args.num_hospitals} other terminals (same machine or others on the LAN), run:")
     for i in range(args.num_hospitals):
-        print(f"  python demo/run_hospital.py --hospital-id {i} --server <this-machine-ip>:{port}")
+        adaptive_flag = "" if adaptive else " --no-adaptive"
+        print(f"  python demo/run_hospital.py --hospital-id {i} --server <this-machine-ip>:{port}{adaptive_flag}")
     print()
 
-    _init_state(args.num_hospitals, args.rounds)
+    _init_state(args.num_hospitals, args.rounds, adaptive)
     if not args.no_dashboard:
         start_dashboard_server(args.dashboard_port)
         print(f"Live dashboard: http://localhost:{args.dashboard_port}\n")
@@ -166,7 +220,7 @@ def main():
     fl.server.start_server(
         server_address=args.address,
         config=fl.server.ServerConfig(num_rounds=args.rounds),
-        strategy=make_narrated_strategy(args.num_hospitals),
+        strategy=make_narrated_strategy(args.num_hospitals, adaptive, args.base_mu, args.base_epsilon),
     )
     print("\nServer finished. The final global model is the product of every hospital's contribution -- the server never saw a single row of raw patient data from any of them.")
 

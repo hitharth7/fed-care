@@ -19,7 +19,7 @@ pip install -r requirements.txt
 ```
 data/            # dataset loading + Dirichlet non-IID partitioning
 models/          # MLP (tabular), CNN (stretch goal: imaging)
-fl/              # Flower client + FedAvg/FedProx strategies
+fl/              # Flower client + FedAvg/FedProx strategies + drift-aware controller
 privacy/         # Opacus DP-SGD wrapper, membership-inference audit
 experiments/     # runnable scripts: baseline, FL sweep, MIA audit
 notebooks/       # EDA and results plotting only (no core logic)
@@ -49,4 +49,6 @@ Core pipeline (Steps 1-9) is built and runs end-to-end on a local CPU/MPS valida
 1. Vanilla FedAvg can badly harm a hospital whose local population diverges from the global pool (worst-client accuracy 78.9% trained alone vs 34.7% under FedAvg) -- and FedProx does **not** recover this at any tested mu, a verified negative result, not a bug.
 2. Federated pooling itself, independent of DP, is the dominant privacy mechanism here: the shared FedAvg/FedProx model shows near-zero measured MIA leakage at every epsilon including no DP, while fully local per-hospital models leak measurably more.
 
-**Not yet done**: the full multi-seed, full-epsilon-grid sweep on Colab GPU (this local run used a reduced 3-point grid, 1 seed, to validate correctness — see `paper/report.md` Section 3.6 and 4.3), and the drift-aware controller / imaging stretch goals (deferred per project scope decision, only worth attempting if the above is solid ahead of schedule).
+**Also built**: the drift-aware controller (`fl/drift_controller.py`, previously a deferred stretch goal) — adaptively tunes each hospital's personalization strength, DP privacy level, and aggregation weight based on measured drift and a leakage-risk proxy, live in the demo (see [`demo/README.md`](demo/README.md#the-drift-aware-controller)). Verified as a real, correctly-functioning system; not yet run through a proper multi-seed research comparison.
+
+**Not yet done**: the full multi-seed, full-epsilon-grid sweep on Colab GPU (this local run used a reduced 3-point grid, 1 seed, to validate correctness — see `paper/report.md` Section 3.6 and 4.3), a research-pipeline validation of the drift-aware controller, and the imaging stretch goal (deferred per project scope decision).
