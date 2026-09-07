@@ -44,8 +44,10 @@ fedcare/
     01_eda.ipynb                # dataset EDA + Dirichlet partition visualization
   demo/
     prepare_demo_data.py         # one-time: materializes each hospital's own data file on disk
-    run_server.py                 # real networked FL server (for live panel demos)
+    run_server.py                 # real networked FL server + live dashboard web server (for live panel demos)
     run_hospital.py                # real networked FL client, one process per hospital
+    dashboard/
+      index.html                    # the live visual dashboard (open in a browser)
     README.md                       # how to run the live demo + what to say about it
   results/                       # all metrics (.json) and figures (.png) land here
   paper/
@@ -197,8 +199,9 @@ Everything above runs in Flower's **simulation mode**: all 5 hospitals execute a
 `demo/` is a separate presentation layer using the *exact same* model and client code (`models/mlp.py`, `fl/client.py`), but deployed as real, separate OS processes communicating over an actual gRPC network socket — the same transport Flower uses in production. It does not feed into any research result in `paper/report.md`; it exists purely so a panel can watch federated learning happen rather than take it on faith.
 
 - **`prepare_demo_data.py`** — one-time setup. Computes the same Dirichlet partition as the research pipeline (`alpha=0.5`, 5 hospitals, `seed=42`) and **materializes each hospital's data as its own separate `.npz` file** on disk (`demo/hospital_data/hospital_{0..4}_{train,val}.npz`) — a genuinely separate, inspectable artifact per hospital, not just an in-memory slice. This mirrors how a real deployment would provision each hospital's local database once, ahead of training.
-- **`run_server.py`** — a real Flower server (`flwr.server.start_server`) with narrated per-round logging of every hospital's reported accuracy before/after aggregation.
+- **`run_server.py`** — a real Flower server (`flwr.server.start_server`) with narrated per-round logging of every hospital's reported accuracy before/after aggregation. Also starts a small local HTTP server (`http.server`, stdlib, default port 8090, background thread) serving `dashboard/index.html` and a `dashboard_state.json` it rewrites atomically after every fit/evaluate aggregation round — this is the *only* connection between the server and the dashboard; the dashboard is a read-only mirror of real strategy callbacks, not a separate data path.
 - **`run_hospital.py`** — a real Flower client (`flwr.client.start_client`) that loads *only* its own `.npz` file (never another hospital's), trains via the same `DiabetesFlowerClient`, and prints what it's doing at each step. Run once per hospital, in its own process/terminal.
+- **`dashboard/index.html`** — a single self-contained page (inline CSS/JS, Chart.js from CDN for the accuracy-over-rounds chart) polling `dashboard_state.json` every 800ms: a central "Global Model" node with 5 hospital nodes around it, connecting lines that light up when a hospital sends weights, per-hospital accuracy color-coded, and a live activity log. Verified end-to-end with a real running server + 5 real hospital processes (not just the JSON, the *rendered page* too, via headless Chrome screenshots and DOM dumps against the live server). This caught two real rendering bugs worth knowing about if you touch this file: `backdrop-filter: blur()` on the card backgrounds rendered as fully invisible in headless Chrome (fixed by using an opaque-enough base color instead of relying on blur compositing for visibility), and a `resize` event listener that wiped and recreated all hospital cards was firing on spurious resize events and could leave the visualization empty (removed — `ensureCards()` already recomputes layout every poll tick, so it was unnecessary). See `demo/dashboard_preview.png` for a real screenshot from an actual run.
 
 See `demo/README.md` for exact run instructions, multi-machine setup, troubleshooting, and suggested talking points. Verified end-to-end: all 5 hospitals connecting, training, and reporting accuracy that matches Step 5's simulation-mode results exactly (client 1: 34.7%, client 3: 97.7%, etc. — same seed, same partition, different transport).
 

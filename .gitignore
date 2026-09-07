@@ -11,6 +11,8 @@ data/*.csv
 data/*.parquet
 results/raw/
 demo/hospital_data/
+demo/dashboard/dashboard_state.json
+demo/dashboard/*.tmp
 *.pt
 *.ckpt
 

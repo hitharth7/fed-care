@@ -41,6 +41,25 @@ Start the server first, then the 5 hospitals (order among the hospitals doesn't 
 
 After `--rounds` rounds (default 10), everything exits cleanly on its own.
 
+## Watching it: the live dashboard (recommended for presenting)
+
+`run_server.py` also starts a small local web server showing a live visual dashboard — open **http://localhost:8090** in a browser once the server is running (works before the hospitals connect too; it'll just show 5 hospitals "waiting to connect").
+
+![Dashboard preview](dashboard_preview.png)
+*Preview from an actual run (round 5/100) — every number here is real, live state from the server, not staged. Hospital 1's accuracy showing red/34.7% is the same collapsed-accuracy finding documented in `paper/report.md`.*
+
+It shows, updating in real time as the real demo runs:
+- A central "Global Model" node with 5 hospital nodes around it, connected lines that light up when a hospital sends weights
+- Each hospital's own record count and local accuracy, color-coded
+- A line chart of the global model's accuracy climbing round by round
+- A live scrolling activity log (the same events as the terminal, styled for a screen)
+
+This is **read-only** — it displays `demo/dashboard/dashboard_state.json`, which `run_server.py` writes after every round from the real aggregation callback. It cannot influence training and shows nothing that isn't also visible in the terminal logs; it's just much better to project on a screen. Put this on the projector/shared screen instead of a terminal window.
+
+To disable it (e.g. running headless on a server with no browser): `python demo/run_server.py --no-dashboard`. To use a different port if 8090 is taken: `--dashboard-port 8091`.
+
+**One thing worth knowing before you present it**: in this project's `alpha=0.5` non-IID setup, hospital 1's accuracy typically stays flat around 34-35% every round (color-coded red on the dashboard) — that's not a dashboard bug, it's the real, documented finding from `paper/report.md` (vanilla FedAvg collapses that hospital to majority-class prediction). If a panel member asks, that's your cue to talk about the FedProx investigation.
+
 ## Running across multiple machines (more visually convincing, more setup risk)
 
 Same code, different `--address`/`--server` values:
@@ -66,3 +85,8 @@ Recommendation: **rehearse this at least once before presenting** — multi-mach
 - *"Each hospital is a separate process — here they're 5 terminals on my laptop, but the exact same code runs unmodified across 5 separate physical machines on a hospital network, or 5 Docker containers in a production deployment."*
 - *"You can see each hospital only trains on its own file — hospital 3 has ~94,000 records, hospital 4 has ~2,500 — and only ever sends model weights over the socket, never the underlying patient data."*
 - *"The research results in the paper come from running this same logic hundreds of times faster in Flower's simulation mode — this networked version is slower but makes the architecture visible."*
+- *"The dashboard is just a live view of the real server's state — it's reading the same JSON the terminal is printing, rendered nicer for the screen."*
+
+## Rehearse before you present
+
+Run through the whole thing once — `prepare_demo_data.py`, server, all 5 hospitals, dashboard open in a browser — before doing it live. Terminal count and window management (7 windows: 1 server, 5 hospitals, 1 browser) is the main thing that trips people up in the moment, not the code.
