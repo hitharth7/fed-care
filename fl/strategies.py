@@ -5,11 +5,14 @@ from flwr.common import Metrics
 
 def weighted_average(metrics: list[tuple[int, Metrics]]) -> Metrics:
     total = sum(n for n, _ in metrics)
-    return {
+    out = {
         "accuracy": sum(n * m["accuracy"] for n, m in metrics) / total,
         "f1": sum(n * m["f1"] for n, m in metrics) / total,
         "auc": sum(n * m["auc"] for n, m in metrics) / total,
     }
+    if "balanced_accuracy" in metrics[0][1]:
+        out["balanced_accuracy"] = sum(n * m["balanced_accuracy"] for n, m in metrics) / total
+    return out
 
 
 def make_fedavg_strategy(

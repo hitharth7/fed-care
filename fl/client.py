@@ -27,9 +27,62 @@ import flwr as fl
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_auc_score
 
 from privacy.dp import DPConfig, make_dp_config, wrap_for_round
+
+
+def compute_pos_weight(loader) -> float:
+    """n_neg/n_pos for this client's OWN shard, for BCEWithLogitsLoss.
+
+    Local positive rates at alpha=0.5 range from 0.8% (client 0) to 65%
+    (client 1) against a 13.9% pooled rate. Unweighted BCE drives each
+    client's update toward its own majority class, which is why 4 of 5
+    clients score f1=0 and the model's probabilities sit far below 0.5.
+    """
+    y = loader.dataset.tensors[1]
+    n_pos = float(y.sum())
+    return float(len(y) - n_pos) / max(n_pos, 1.0)
+
+
+def make_criterion(pos_weight: float | None, device: torch.device) -> nn.BCEWithLogitsLoss:
+    if pos_weight is None:
+        return nn.BCEWithLogitsLoss()
+    return nn.BCEWithLogitsLoss(pos_weight=torch.tensor(pos_weight, device=device))
+
+
+@torch.no_grad()
+def predict_logits(model: nn.Module, loader, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+    """Shared forward pass -- used by evaluate_model and tune_threshold.
+    Returns logits (not probabilities) so the caller can compute BCE loss
+    directly without a lossy sigmoid round-trip."""
+    model.eval()
+    all_logits, all_targets = [], []
+    for xb, yb in loader:
+        all_logits.append(model(xb.to(device)).cpu())
+        all_targets.append(yb)
+    return torch.cat(all_logits), torch.cat(all_targets)
+
+
+def tune_threshold(model: nn.Module, loader, device: torch.device, n_grid: int = 200) -> float:
+    """Pick this client's decision threshold on data it OWNS (its train shard).
+
+    A single 0.5 cut is wrong for any hospital whose class prior differs from
+    the federation's: the alpha=0.5 global model puts EVERY one of client 1's
+    (65% positive) patients on the negative side, scoring exactly its negative
+    fraction (0.3472) despite ranking them well (AUC 0.82).
+
+    Selected by balanced accuracy, not accuracy -- raw accuracy is maximized
+    by predicting the local majority class, which is the failure being fixed.
+    """
+    logits, targets_t = predict_logits(model, loader, device)
+    probs = torch.sigmoid(logits).numpy().ravel()
+    targets = targets_t.numpy().ravel()
+    if len(np.unique(targets)) < 2:
+        return 0.5
+    grid = np.unique(np.quantile(probs, np.linspace(0.001, 0.999, n_grid)))
+    scores = [balanced_accuracy_score(targets, (probs >= t).astype(np.float32)) for t in grid]
+    return float(grid[int(np.argmax(scores))])
 
 
 def get_parameters(model: nn.Module) -> list[np.ndarray]:
@@ -55,6 +108,8 @@ class DiabetesFlowerClient(fl.client.NumPyClient):
         mu: float = 0.0,
         dp_config: DPConfig | None = None,
         track_controller_metrics: bool = False,
+        use_pos_weight: bool = False,
+        per_client_threshold: bool = False,
     ):
         self.model = model.to(device)
         self.train_loader = train_loader
@@ -66,6 +121,10 @@ class DiabetesFlowerClient(fl.client.NumPyClient):
         self.mu = mu
         self.dp_config = dp_config
         self.track_controller_metrics = track_controller_metrics
+        # Both default off so the original (threshold-0.5, unweighted) results
+        # stay exactly reproducible as the "before" condition.
+        self.pos_weight = compute_pos_weight(train_loader) if use_pos_weight else None
+        self.per_client_threshold = per_client_threshold
 
     def get_parameters(self, config):
         return get_parameters(self.model)
@@ -107,7 +166,7 @@ class DiabetesFlowerClient(fl.client.NumPyClient):
         if dp_wrapped:
             model, optimizer, train_loader = wrap_for_round(model, optimizer, train_loader, dp_config)
 
-        criterion = nn.BCEWithLogitsLoss()
+        criterion = make_criterion(self.pos_weight, self.device)
         model.train()
         for _ in range(self.local_epochs):
             for xb, yb in train_loader:
@@ -152,32 +211,41 @@ class DiabetesFlowerClient(fl.client.NumPyClient):
 
     def evaluate(self, parameters, config):
         set_parameters(self.model, parameters)
-        loss, n, metrics = evaluate_model(self.model, self.val_loader, self.device)
+        # Tuned on this client's own TRAIN shard, then applied to its val set --
+        # no test-set leakage, and it only uses data the hospital already holds.
+        threshold = (
+            tune_threshold(self.model, self.train_loader, self.device)
+            if self.per_client_threshold
+            else 0.5
+        )
+        loss, n, metrics = evaluate_model(self.model, self.val_loader, self.device, threshold)
         metrics["client_id"] = self.client_id
         return loss, n, metrics
 
 
 @torch.no_grad()
-def evaluate_model(model: nn.Module, loader, device: torch.device) -> tuple[float, int, dict]:
+def evaluate_model(
+    model: nn.Module, loader, device: torch.device, threshold: float = 0.5
+) -> tuple[float, int, dict]:
     """Shared eval used by the Flower client, the fully-local baseline loop,
-    and the per-client / per-condition result tables."""
-    model.eval()
-    criterion = nn.BCEWithLogitsLoss()
-    all_probs, all_targets = [], []
-    total_loss = 0.0
-    for xb, yb in loader:
-        xb, yb = xb.to(device), yb.to(device)
-        logits = model(xb)
-        total_loss += criterion(logits, yb).item() * xb.size(0)
-        all_probs.append(torch.sigmoid(logits).cpu().numpy())
-        all_targets.append(yb.cpu().numpy())
-    probs = np.concatenate(all_probs)
-    targets = np.concatenate(all_targets)
-    preds = (probs >= 0.5).astype(np.float32)
+    and the per-client / per-condition result tables.
+
+    Reports balanced_accuracy alongside accuracy: under this dataset's 86/14
+    imbalance, an all-negative predictor scores 0.94-0.99 accuracy on the
+    negative-heavy clients while being a coin flip (balanced accuracy 0.50),
+    so accuracy alone hides a globally degenerate model.
+    """
+    logits, targets_t = predict_logits(model, loader, device)
+    loss = float(nn.BCEWithLogitsLoss()(logits, targets_t))
+    probs = torch.sigmoid(logits).numpy().ravel()
+    targets = targets_t.numpy().ravel()
+    preds = (probs >= threshold).astype(np.float32)
     n = len(loader.dataset)
     metrics = {
         "accuracy": float(accuracy_score(targets, preds)),
+        "balanced_accuracy": float(balanced_accuracy_score(targets, preds)),
         "f1": float(f1_score(targets, preds, zero_division=0)),
         "auc": float(roc_auc_score(targets, probs)) if len(np.unique(targets)) > 1 else 0.5,
+        "threshold": float(threshold),
     }
-    return total_loss / n, n, metrics
+    return loss, n, metrics

@@ -16,7 +16,7 @@ The project's distinguishing move (vs. a standard FL tutorial): it doesn't stop 
 
 **Core research question**: given that hospitals legitimately have different patient populations, can FedProx recover the accuracy lost to DP, without reopening the privacy leak DP is meant to close?
 
-**Answer found so far** (see §8): not quite what was expected — FedProx turns out *not* to recover the worst-served hospital's accuracy at all (a verified negative result), and separately, federated pooling itself (independent of DP) turns out to be the dominant privacy mechanism in this setup. Both are real, defensible findings — see `paper/report.md` for the full discussion.
+**Answer found so far** (see §8): more layered than it first looked. The initial FedAvg run appeared to collapse one hospital's accuracy (78.9% local → 34.7% federated), unrecoverable by FedProx at any mu — but that collapse turned out to be substantially a fixed-threshold artifact under per-client label shift, not a training failure (that hospital's AUC was 0.82 throughout). Correcting for it and re-comparing local vs. FedAvg fairly on both sides shows federation gives a modest *net* benefit, but not to the most atypical hospitals — see §8.2 for the full diagnosis and corrected numbers. Separately, federated pooling itself (independent of DP) turns out to be the dominant privacy mechanism in this setup (§8.3), though those results predate the correction and should be re-run. See `paper/report.md` for the full discussion.
 
 ---
 
@@ -94,7 +94,7 @@ python experiments/run_mia_audit.py   # ~5-10 min. Writes privacy_sweep_step7_8.
 
 `run_fl_sweep.py` reads `results/baseline_metrics.json` (to print the sanity-check gap) but doesn't hard-fail if it's missing. `run_mia_audit.py` reads `results/fl_step6_fedprox.json` to pick up the best FedProx mu found in Step 6 (falls back to `mu=0.001` if that file doesn't exist yet).
 
-Runtimes above are for a 2024 MacBook (Apple MPS backend, no CUDA). On Colab with a T4 GPU, the FL/DP scripts should be faster; the *reduced* grids used in `run_mia_audit.py` are specifically sized to be tractable locally (see §8.4) — expect to edit that script's grid before running the full-scale version.
+Runtimes above are for a 2024 MacBook (Apple MPS backend, no CUDA). On Colab with a T4 GPU, the FL/DP scripts should be faster; the *reduced* grids used in `run_mia_audit.py` are specifically sized to be tractable locally (see §8.5) — expect to edit that script's grid before running the full-scale version.
 
 ### Interactive EDA
 
@@ -142,7 +142,14 @@ Two functions:
 | FedProx | `mu > 0.0` — adds `mu/2 * ||w - w_global||²` to the local loss, pulling the client toward the round's starting global params |
 | + Differential Privacy | `dp_config` given — wraps that round's model/optimizer/loader with Opacus (`privacy/dp.py`) before training |
 
-Any combination of `mu` and `dp_config` is valid — Step 7's DP sweep runs all three FL conditions with DP simultaneously using this same class. `get_parameters`/`set_parameters` do the ndarray ↔ state_dict conversion Flower's `NumPyClient` interface expects; `evaluate_model()` (shared with the non-Flower "fully local" training path in `run_fl_sweep.py`) computes accuracy/F1/AUC identically regardless of which path produced the model.
+Any combination of `mu` and `dp_config` is valid — Step 7's DP sweep runs all three FL conditions with DP simultaneously using this same class. `get_parameters`/`set_parameters` do the ndarray ↔ state_dict conversion Flower's `NumPyClient` interface expects; `evaluate_model()` (shared with the non-Flower "fully local" training path in `run_fl_sweep.py`) computes accuracy/balanced_accuracy/F1/AUC identically regardless of which path produced the model.
+
+**Added after diagnosing the alpha=0.5 collapse (§8.2)** — two optional, independently-toggled corrections for per-client label shift, both off by default so every existing result stays exactly reproducible:
+
+- `compute_pos_weight(loader)` + `make_criterion(pos_weight, device)` — `use_pos_weight=True` weights each client's local `BCEWithLogitsLoss` by its own `n_negative/n_positive`, so training targets that client's own class balance instead of the pooled dataset's.
+- `predict_logits()` + `tune_threshold()` — `per_client_threshold=True` has each client pick its evaluation threshold by balanced accuracy on its own *training* shard (never validation or the global test set), then apply that threshold when evaluating. `evaluate_model()` takes an explicit `threshold` argument (default 0.5) and now also reports `balanced_accuracy` and the `threshold` used, in the returned metrics dict.
+
+Both flags thread through `DiabetesFlowerClient.__init__`, `run_fully_local()`, and `run_fl_condition()`/`run_fedavg()` in `experiments/run_fl_sweep.py`.
 
 Two more things layered on for the drift-aware controller (§5.4a), both **off by default** so Steps 5-8 are completely unaffected:
 - `fit()`'s `config` dict may carry `"mu"` / `"target_epsilon"` overrides for *just that round* (falls back to the constructor's fixed `mu`/`dp_config` when absent — this is how a controller actually controls a client without needing a different class).
@@ -207,6 +214,8 @@ The main FL comparison script. Key functions:
 - **`run_step6_fedprox(...)`** — grid-searches `mu ∈ {0.001, 0.01, 0.1, 1.0}`, selects the best by **mean AUC** (not worst-client accuracy — see §8.2), and produces the two-panel comparison figure.
 
 Running `main()` does two things in sequence: (1) the near-IID FedAvg sanity check against the centralized baseline, then (2) the `alpha=0.5` local-vs-FedAvg comparison, followed by the FedProx mu grid search.
+
+- **`run_step5c_corrected(...)`** — re-runs local vs. vanilla FedAvg at `alpha=0.5` with `use_pos_weight=True, per_client_threshold=True` on *both* conditions, since Step 5's original local numbers have the same fixed-threshold artifact hiding in them (clients 0/2/3 also score f1=0.0 there) and aren't a fair baseline to compare a corrected FedAvg against. Writes `results/fl_step5c_corrected.json`. Runs automatically after `run_step6_fedprox()` when the script is executed directly. **Not yet done**: the mu grid itself hasn't been re-run with correction — see §8.5.
 
 ### 5.10 `experiments/run_mia_audit.py` — Steps 7-8
 
@@ -278,6 +287,27 @@ At `alpha=0.5` (moderate non-IID):
 
 **FedProx does not recover client 1's accuracy at any μ ∈ {0.001, 0.01, 0.1, 1.0, 10.0} or at local_epochs ∈ {1, 5}** — verified as a real, structural finding (μ does change the underlying model — AUC shifts measurably — but not enough to flip any prediction across the 0.5 threshold for this client). See `paper/report.md` §4.2 for the full investigation.
 
+**Diagnosis (§8.2b) found the collapse above is substantially a fixed-threshold artifact, not a training failure**: client 1's AUC under FedAvg is 0.822 (the model ranks its patients well), and **balanced accuracy is 0.500 — chance — for every one of the 5 clients**, not only client 1, once the accuracy metric's imbalance-driven floor is accounted for. Clients 0/2/3's 93.9–99.3% accuracy above is itself an artifact of 94–99% of their patients being the negative class.
+
+#### 8.2b Correction and the fair local-vs-FedAvg comparison
+
+Fix (`fl/client.py`, §5.4): per-client `pos_weight` in the training loss + a per-client decision threshold tuned on each client's own training shard. Client 1, before/after (AUC unchanged — only the readout changed): accuracy 0.347 → 0.758, F1 0.000 → 0.810.
+
+Section 8.2's "fully local" numbers have the same artifact hiding in them (clients 0/2/3 also score f1=0.0 there), so re-ran **local vs. vanilla FedAvg with the same correction on both** (`run_step5c_corrected()`, `results/fl_step5c_corrected.json`):
+
+| Client | Local bal. acc | FedAvg bal. acc |
+|---|---|---|
+| 0 | 0.743 | **0.783** |
+| 1 | **0.745** | 0.744 |
+| 2 | 0.737 | **0.750** |
+| 3 | 0.764 | **0.770** |
+| 4 | **0.733** | 0.721 |
+| **Mean** | 0.744 | **0.753** |
+
+**Federation wins on average** (0.753 vs 0.744), but not uniformly: clients 0/2/3 (typical local class priors) gain from pooling; clients 1 and 4 (the two furthest from the federation's typical patient mix) do marginally *worse* under the shared model than alone. This is the expected signature of non-IID heterogeneity limiting FedAvg for atypical clients specifically — and it's a sharper, more defensible finding than the original "collapse." See `paper/report.md` §4.2b–4.2c.
+
+**Not yet tested**: the FedProx μ grid hasn't been re-run with this correction — whether corrected FedProx closes the remaining gap for clients 1/4 (which corrected vanilla FedAvg does not) is the natural next experiment (§8.5).
+
 ### 8.3 Privacy audit (Steps 7-8)
 
 MIA sanity check passes (AUC 0.80 against a deliberately overfit model). Two findings:
@@ -285,14 +315,19 @@ MIA sanity check passes (AUC 0.80 against a deliberately overfit model). Two fin
 1. **Fully local models leak measurably more than the pooled FedAvg/FedProx model, even without any DP.** Local per-client attack AUC: 0.52-0.63 (mean ~0.59). FedAvg/FedProx shared model: attack AUC ~0.485 (statistically ≈0.5, i.e. no detectable leakage) at *every* epsilon tested, including no DP at all.
 2. DP noise further reduces the (already small) local-condition leakage, but the effect is modest at this sample size (single seed, 3-point grid).
 
+**These models predate the §8.2b correction** (no `pos_weight`, fixed 0.5 threshold) — re-running this sweep against corrected models is pending (§8.5); a model that actually learns the positive class rather than one whose probabilities cluster near 0 may show different memorization behavior.
+
 ### 8.4 The drift-aware controller (built, demo-only so far)
 
-The previously-deferred stretch goal is now built (`fl/drift_controller.py`, §5.4a) and running live in `demo/`, adaptively tuning each hospital's FedProx `mu`, DP `target_epsilon`, and aggregation weight based on measured drift and an overfit-gap leakage-risk proxy. Verified as a real, correctly-functioning system over live 20+ round networked runs — but **not yet run through Steps 5-8's rigor**: no multi-seed comparison against the static approach, no `experiments/` script, no numbers in `paper/report.md`. It demonstrably reacts correctly to what it observes; whether that reaction actually improves worst-client accuracy or leakage over the static Step 5-8 approach is the natural next experiment.
+The previously-deferred stretch goal is now built (`fl/drift_controller.py`, §5.4a) and running live in `demo/`, adaptively tuning each hospital's FedProx `mu`, DP `target_epsilon`, and aggregation weight based on measured drift and an overfit-gap leakage-risk proxy. Verified as a real, correctly-functioning system over live 20+ round networked runs — but **not yet run through Steps 5-8's rigor**: no multi-seed comparison against the static approach, no `experiments/` script, no numbers in `paper/report.md`. It demonstrably reacts correctly to what it observes; whether that reaction actually improves worst-client accuracy or leakage over the static Step 5-8 approach is the natural next experiment. **It also predates the §8.2b correction** — it's tuning `mu`/epsilon on top of the same unweighted-loss, fixed-0.5-threshold models, so its drift/overfit-gap signals should be re-validated once the controller's clients also use `pos_weight`/per-client thresholds.
 
 ### 8.5 What's not done yet
 
+- **Re-run the DP/MIA sweep (§8.3) against corrected models** (`use_pos_weight=True, per_client_threshold=True`) — highest priority, since §8.3's current numbers are evaluated against the pre-fix models.
+- **Re-run the FedProx μ grid with the same correction** — tests whether personalization closes the clients 1/4 gap that corrected vanilla FedAvg (§8.2b) does not.
+- If it doesn't: explicit per-client personalization (FedPer — local classifier head, shared feature extractor — or Ditto) targeted specifically at clients 1 and 4.
 - The full multi-seed, full-epsilon-grid sweep (`{1,3,5,10,inf} × 3 conditions × 3-5 seeds`) on Colab GPU — this local run used a reduced grid specifically to validate the pipeline's correctness (Verification Plan items 2-5 all pass), not to produce final paper-quality numbers.
-- A proper research-pipeline validation of the drift-aware controller (see §8.4) and the imaging-modality (PneumoniaMNIST) stretch goal — both deferred per the project's own scope decision (core-first, stretch goals only if ahead of schedule).
+- A proper research-pipeline validation of the drift-aware controller, re-run against corrected (§8.2b) models (see §8.4) — and the imaging-modality (PneumoniaMNIST) stretch goal, deferred per the project's own scope decision (core-first, stretch goals only if ahead of schedule).
 
 ---
 

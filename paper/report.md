@@ -1,10 +1,10 @@
 # FedCare: Personalized Federated Learning for Healthcare Diagnostics with Empirically-Audited Privacy
 
-*Draft report / paper scaffold. IEEE short-paper structure. Numbers below are from the local CPU/MPS validation run (1 seed, reduced epsilon grid); re-run the full grid on Colab (Section "Compute strategy") before treating any number here as final.*
+*Draft report / paper scaffold. IEEE short-paper structure. Numbers below are from the local CPU/MPS validation run (1 seed, reduced epsilon grid); re-run the full grid on Colab (Section "Compute strategy") before treating any number here as final. **Update**: Section 4.2's original "FedAvg collapses client 1" finding was diagnosed and partially corrected after initial drafting -- see Sections 4.2b-4.2c. The DP/MIA sweep in Section 4.3 predates this correction and evaluates the pre-fix models; it has not yet been re-run against corrected models (flagged in Section 5).*
 
 ## Abstract
 
-FedCare simulates five hospitals training a shared diabetes-diagnostic model under realistic constraints: non-IID patient populations, differential-privacy noise, and an empirical (not just theoretical) privacy audit via membership inference. We find that vanilla FedAvg can badly harm a hospital whose local population diverges from the global pool (worst-client accuracy 78.9% trained alone vs 34.7% under FedAvg), and that FedProx (Li et al., 2020) -- despite measurably changing the trained model (AUC shifts with mu) -- does not recover this client's accuracy at any tested mu or local-epoch setting, a negative result we verify is structural rather than an undertuned hyperparameter. Auditing privacy with a loss-threshold membership-inference attack (Yeom et al., 2018), we find federated pooling itself, independent of differential privacy, is the dominant privacy mechanism in this setup: the shared FedAvg/FedProx model shows near-zero measured leakage (attack AUC ~0.485) at every epsilon tested including no DP, while fully local per-hospital models leak measurably more (attack AUC up to 0.63) even before any DP noise is added. These results, from a reduced local-compute validation grid pending a full Colab-scale sweep, reframe the project's original question: for this architecture, the binding privacy risk is training locally at all, not the choice of epsilon.
+FedCare simulates five hospitals training a shared diabetes-diagnostic model under realistic constraints: non-IID patient populations, differential-privacy noise, and an empirical (not just theoretical) privacy audit via membership inference. We find that vanilla FedAvg can badly harm a hospital whose local population diverges from the global pool (worst-client accuracy 78.9% trained alone vs 34.7% under FedAvg), and that FedProx (Li et al., 2020) -- despite measurably changing the trained model (AUC shifts with mu) -- does not recover this client's accuracy at any tested mu or local-epoch setting, a negative result we verify is structural rather than an undertuned hyperparameter. Auditing privacy with a loss-threshold membership-inference attack (Yeom et al., 2018), we find federated pooling itself, independent of differential privacy, is the dominant privacy mechanism in this setup: the shared FedAvg/FedProx model shows near-zero measured leakage (attack AUC ~0.485) at every epsilon tested including no DP, while fully local per-hospital models leak measurably more (attack AUC up to 0.63) even before any DP noise is added. These results, from a reduced local-compute validation grid pending a full Colab-scale sweep, reframe the project's original question: for this architecture, the binding privacy risk is training locally at all, not the choice of epsilon. A follow-up diagnosis (Section 4.2b) found the reported "collapse" was substantially a fixed-threshold artifact under class-imbalanced label shift, not a training failure: client 1's AUC was 0.82 throughout, and balanced accuracy was 0.50 (chance) for *every* client, not only client 1, once accuracy's imbalance-driven floor was accounted for. Correcting for this (per-client loss weighting and per-client decision thresholds, applied fairly to both the local and federated conditions) shows vanilla FedAvg gives a modest net benefit over local training (mean balanced accuracy 0.753 vs. 0.744), concentrated in clients with typical local class priors -- the two most atypical clients still do marginally better alone, which sharpens rather than overturns the case for explicit personalization.
 
 ## 1. Introduction
 
@@ -40,6 +40,13 @@ Three conditions on the same non-IID partitions, all built from `data/partition.
 3. **FedProx** -- proximal term mu/2 * ||w - w_global||^2 added to local loss (Li et al., 2020). mu selected from {0.001, 0.01, 0.1, 1.0} by validation mean AUC (see Section 4.2 for why accuracy alone was not a usable selection signal).
 
 Flower (`flwr`, simulation mode, `fl/client.py`, `fl/strategies.py`) orchestrates all three; FedProx is the same client/strategy with mu > 0, not a separate system.
+
+### 3.3b Correcting for per-client label shift
+
+Added after the diagnosis in Section 4.2b. Two independent, optional corrections in `fl/client.py`, both off by default so every prior result remains exactly reproducible as the uncorrected baseline:
+
+- **Per-client loss weighting** (`compute_pos_weight`, `use_pos_weight=True`): `BCEWithLogitsLoss(pos_weight=n_negative/n_positive)`, computed from each client's own training shard, so local training targets that client's own class balance rather than the pooled dataset's.
+- **Per-client decision threshold** (`tune_threshold`, `per_client_threshold=True`): each client selects its evaluation threshold by balanced accuracy on its own training shard (never its validation or the global test set), then applies that threshold to its validation set. This is a post-hoc calibration step, not a change to the shared model's parameters.
 
 ### 3.4 Differential privacy
 
@@ -81,9 +88,42 @@ This is a legitimate, citable limitation to discuss (Section 5), and motivates w
 
 Figures: `results/fl_step6_worst_client_comparison.png` (accuracy AND AUC panels, deliberately -- accuracy alone hides the real story here).
 
+### 4.2b Diagnosing the collapse: label shift, not a broken model
+
+The collapse above is a real symptom, but "FedProx cannot fix client 1" understates what is happening. Two checks against the exact Section 4.2 models:
+
+- Client 1's AUC under vanilla FedAvg is **0.822** -- the model ranks client 1's patients well.
+- **Balanced accuracy** (mean of per-class recall; insensitive to a class-imbalanced majority baseline) is **0.500 -- chance level -- for every one of the 5 clients**, not only client 1, under both local and FedAvg/FedProx at the fixed 0.5 threshold. Clients 0, 2, 3 only look fine on raw accuracy (93.9-99.3%) because 94-99% of their patients are the negative class -- an all-negative predictor scores well by construction there. Client 1 is not a broken outlier; it is the only client whose imbalance direction makes the same underlying failure visible in accuracy.
+
+Mechanism: local positive rates range from 0.8% (client 0) to 65% (client 1) against a pooled 13.9%. Unweighted `BCEWithLogitsLoss` on this pooled-style objective drives predicted probabilities well below 0.5 for nearly every input -- the corrected thresholds recovered below sit at 0.03-0.07, not 0.5. That is harmless for clients whose local prior points the same direction as the pooled skew, and catastrophic for client 1, whose local prior is inverted relative to the pool.
+
+**Correction applied** (Section 3.3b): per-client `pos_weight` during training, plus a per-client decision threshold tuned on each client's own training shard. Client 1, before and after (AUC unchanged -- only the readout changed):
+
+| | Accuracy | F1 | AUC |
+|---|---|---|---|
+| Fixed 0.5, unweighted (Section 4.2) | 0.347 | 0.000 | 0.823 |
+| Corrected | 0.758 | 0.810 | 0.823 |
+
+### 4.2c The fair comparison: is federation still worth it once both sides are corrected?
+
+Section 4.2's "fully local" column has the same artifact hiding inside it -- clients 0, 2, 3 also score F1=0.0 there, masked by their own negative-heavy priors -- so comparing an uncorrected local baseline against an uncorrected FedAvg is not a fair test of this project's actual research question (does collaboration help?). Re-running **local and vanilla FedAvg with the same correction applied to both**:
+
+| Client | Local acc | FedAvg acc | Local bal. acc | FedAvg bal. acc |
+|---|---|---|---|---|
+| 0 | 0.750 | 0.685 | 0.743 | **0.783** |
+| 1 | **0.762** | 0.758 | **0.745** | 0.744 |
+| 2 | 0.714 | 0.725 | 0.737 | **0.750** |
+| 3 | 0.687 | 0.683 | 0.764 | **0.770** |
+| 4 | **0.741** | 0.709 | **0.733** | 0.721 |
+| **Mean** | 0.731 | 0.712 | 0.744 | **0.753** |
+
+(`results/fl_step5c_corrected.json`.) Mean balanced accuracy favors federation, by a modest 0.9-point margin -- FedAvg's shared model is a net improvement over training alone once evaluated correctly. The benefit is **not uniform**: clients 0, 2, 3 (relatively unremarkable local priors) gain from pooling, while clients 1 and 4 -- the two furthest from the federation's typical patient mix (65% and 11.4% positive respectively) -- do marginally *worse* under the shared model than alone. This is the expected signature of non-IID heterogeneity limiting FedAvg specifically for atypical clients, and it sharpens Section 4.2's finding: the proximal term was never positioned to fix a *calibration/label-shift* problem (it acts in parameter space, not on the decision output), which is a more precise claim than "personalization failed."
+
+**Open item**: only vanilla FedAvg (mu=0) has been re-run with correction; the mu grid (Section 4.2) has not, so whether a corrected FedProx outperforms corrected FedAvg specifically for clients 1 and 4 remains untested (Section 5).
+
 ### 4.3 Privacy-utility-leakage tradeoff
 
-Reduced local grid: epsilon in {1.0, 3.0, inf}, 3 conditions, 1 seed (`results/privacy_sweep_step7_8.json`, `results/privacy_tradeoff.png`).
+Reduced local grid: epsilon in {1.0, 3.0, inf}, 3 conditions, 1 seed (`results/privacy_sweep_step7_8.json`, `results/privacy_tradeoff.png`). **These models predate the Section 4.2b/4.2c correction** (no `pos_weight`, fixed 0.5 threshold) -- re-running this sweep against corrected models is pending; a model that actually learns the positive class (rather than one whose probabilities cluster near 0) may plausibly show different memorization behavior, so the leakage numbers below should be treated as provisional pending that re-run.
 
 Verification checks, all passed:
 - [x] MIA sanity check on deliberately overfit model: AUC 0.80 > 0.7 (30-sample, 256x128-MLP overfit configuration -- see `sanity_check_attack()` docstring for why the first attempt at n=500 members only reached AUC 0.58, a real and informative negative result about loss-threshold MIA power on imbalanced data, not an attack bug).
@@ -102,7 +142,9 @@ Verification checks, all passed:
 
 ## 5. Discussion
 
-**At what epsilon does personalization stop being able to buy back accuracy?** Under this project's own results, the question needs revising: FedProx (proximal-term-only) never bought back client 1's accuracy at *any* epsilon, DP or no DP (Section 4.2) -- so there is no epsilon threshold to find for FedProx specifically. What DP *does* cost is per-client AUC for the local condition (Section 4.3, finding 2), on top of an already-present accuracy gap between local and FedAvg/FedProx that FedProx doesn't close.
+**Was FedAvg actually broken, or was the evaluation?** Mostly the evaluation (Section 4.2b): a fixed 0.5 threshold under per-client label shift pinned balanced accuracy at chance (0.50) for *every* client, not just client 1, and correcting for it flips the headline comparison -- FedAvg beats local training on average (Section 4.2c), just not for the two most atypical clients. The right open question is therefore no longer "does personalization recover client 1" but **"does corrected FedProx close the residual gap for clients 1 and 4 that corrected FedAvg does not"** -- untested here (Section 4.2c's open item) and the natural next experiment.
+
+**At what epsilon does personalization stop being able to buy back accuracy?** Under this project's *uncorrected* results, the question needed revising: FedProx (proximal-term-only) never bought back client 1's accuracy at *any* epsilon, DP or no DP (Section 4.2) -- so there was no epsilon threshold to find for FedProx specifically. That still stands as a finding about the proximal term in parameter space; it does not resolve the calibration question above, which lives in output space and is orthogonal to it. What DP *does* cost is per-client AUC for the local condition (Section 4.3, finding 2), on top of an already-present accuracy gap between local and FedAvg/FedProx that FedProx doesn't close -- though Section 4.3's models predate the correction and should be re-run before this specific claim is finalized.
 
 **Does the privacy audit still pass at the point where utility is acceptable?** Yes, robustly -- the shared FedAvg/FedProx model shows near-zero measured leakage (attack AUC ~0.485) at every epsilon tested, including no DP at all. The more interesting empirical question this project surfaces is not "how much does DP cost FedProx" but **"pooling data across hospitals already suppresses membership leakage more than DP does, for models that never had much to leak in the first place."** That is a genuine, unplanned finding worth foregrounding in the abstract/conclusion alongside the (honest, negative) FedProx result.
 
@@ -110,7 +152,7 @@ Verification checks, all passed:
 
 ## 6. Conclusion
 
-This project set out to test whether personalization (FedProx) could recover the accuracy differential privacy costs, without reopening the leak DP closes. The honest answer, at this scale: FedProx's proximal term doesn't recover the worst-served client's accuracy regardless of DP, so that specific trade never materializes -- but the project surfaces a more useful finding in its place, that pooled federated training is itself the larger privacy mechanism relative to any single hospital training alone, largely independent of the DP epsilon chosen. Both the negative FedProx result and the pooling-privacy finding are defensible, citable contributions on their own, and point directly at concrete future work: explicit per-client personalization (local fine-tuning, Ditto, Per-FedAvg) re-audited for the leakage it would likely reopen, and a full multi-seed epsilon sweep on Colab to put confidence intervals on the trends reported here.
+This project set out to test whether personalization (FedProx) could recover the accuracy differential privacy costs, without reopening the leak DP closes. The initial answer looked stark -- FedAvg appeared to collapse one hospital's accuracy from 78.9% to 34.7%, unrecoverable by FedProx at any mu -- but diagnosis showed most of that collapse was a fixed-threshold artifact under per-client label shift, not a training failure: the model's ranking of that hospital's patients (AUC) was fine throughout, and *every* client, not just the one that looked broken, was at chance-level balanced accuracy under the unweighted, fixed-threshold setup. Correcting for this (per-client loss weighting and per-client thresholds, Section 3.3b) and re-running local vs. FedAvg fairly on both sides (Section 4.2c) gives a more honest three-part result: **(1)** collaboration does help, by a modest overall margin, once measured correctly; **(2)** that benefit is uneven -- it does not reach the hospitals whose patient population differs most from the federation's, which is exactly where explicit per-client personalization (FedPer, Ditto, local fine-tuning on the converged shared model -- none of which were attempted here) should be targeted next; **(3)** the proximal term alone, evaluated fairly, has not yet been shown to close that specific remaining gap, and should be re-tested under the same correction before drawing a final conclusion about FedProx's value in this setting. Separately, the project surfaces a finding that survives this revision untouched: pooled federated training is itself a meaningful privacy mechanism relative to any single hospital training alone, largely independent of the DP epsilon chosen (Section 4.3) -- though those models predate the correction above and should be re-run against corrected models before this claim is finalized. Concrete next steps, in priority order: re-run the privacy audit against corrected models; re-run the FedProx mu grid under the same correction to test whether it closes the clients 1/4 gap; implement explicit per-client personalization (FedPer/Ditto) if it does not; and run the full multi-seed epsilon sweep on Colab to put confidence intervals on every trend reported here.
 
 ## Appendix: Reproducibility
 
