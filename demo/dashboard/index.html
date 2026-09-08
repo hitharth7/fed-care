@@ -140,6 +140,38 @@
   .log::-webkit-scrollbar{width:6px;}
   .log::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12); border-radius:8px;}
 
+  .specialist-panel{max-width:1180px; margin:20px auto 0;}
+  .specialist-grid{display:grid; grid-template-columns:1fr 1fr; gap:24px;}
+  @media (max-width:860px){ .specialist-grid{grid-template-columns:1fr;} }
+  .specialist-form label{display:block; font-size:11px; text-transform:uppercase; letter-spacing:.4px; color:var(--muted); margin:14px 0 6px;}
+  .specialist-form label:first-child{margin-top:0;}
+  .specialist-form select, .specialist-form input{
+    width:100%; background:rgba(255,255,255,0.04); border:1px solid var(--panel-border);
+    border-radius:8px; padding:8px 10px; color:var(--text); font-size:13px;
+  }
+  .specialist-form select:focus, .specialist-form input:focus{ outline:1px solid var(--cyan); }
+  .scale-note{font-size:11.5px; color:var(--muted); margin-top:6px; line-height:1.4;}
+  .feature-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px 12px; margin-top:4px; max-height:280px; overflow-y:auto; padding-right:4px;}
+  .feature-field label{margin:0 0 4px; font-size:10.5px;}
+  .ask-btn{
+    margin-top:18px; width:100%; padding:11px; border:none; border-radius:10px;
+    background:linear-gradient(135deg, var(--cyan), #6366f1); color:#04101c;
+    font-weight:700; font-size:13.5px; cursor:pointer; transition:opacity .2s, transform .15s;
+  }
+  .ask-btn:hover{opacity:.92;}
+  .ask-btn:active{transform:scale(.98);}
+  .ask-btn:disabled{opacity:.5; cursor:default;}
+  .result-card{
+    border-radius:14px; padding:16px; margin-bottom:14px;
+    background:rgba(255,255,255,0.04); border:1px solid var(--panel-border);
+  }
+  .result-card.positive{border-color:rgba(251,113,133,0.4); background:rgba(251,113,133,0.08);}
+  .result-card.negative{border-color:rgba(52,211,153,0.4); background:rgba(52,211,153,0.08);}
+  .result-headline{font-size:19px; font-weight:700;}
+  .result-sub{font-size:12.5px; color:var(--muted); margin-top:6px; line-height:1.5;}
+  .specialist-unavailable{color:var(--muted); font-size:13px; padding:20px 0; text-align:center;}
+  .specialist-unavailable code{background:rgba(255,255,255,0.08); padding:2px 6px; border-radius:5px;}
+
   footer{max-width:1180px; margin:26px auto 0; text-align:center; color:var(--muted); font-size:12.5px;}
   footer b{color:#a5b4fc;}
 
@@ -188,6 +220,38 @@
     <div class="panel">
       <h2>Live activity</h2>
       <div class="log" id="log"></div>
+    </div>
+  </div>
+
+  <div class="panel specialist-panel" id="specialistPanel">
+    <h2>Ask a Specialist</h2>
+    <div id="specialistUnavailable" class="specialist-unavailable" hidden>
+      Specialist query service isn't available. This section is served by
+      <code>demo/run_server.py</code> — make sure the central server (above) is running
+      and this page was opened from its dashboard address.
+    </div>
+    <div class="specialist-grid" id="specialistBody">
+      <div class="specialist-form">
+        <label>Specialty</label>
+        <select id="specialtySelect"></select>
+        <div class="scale-note" id="scaleNote"></div>
+
+        <label>Querying as</label>
+        <select id="hospitalSelect"></select>
+
+        <label>Patient data</label>
+        <div class="feature-grid" id="featureFields"></div>
+
+        <button class="ask-btn" id="askBtn">Ask the federation</button>
+      </div>
+
+      <div class="specialist-output">
+        <div class="result-card" id="resultCard" hidden>
+          <div class="result-headline" id="resultHeadline"></div>
+          <div class="result-sub" id="resultSub"></div>
+        </div>
+        <div class="log" id="queryLog" style="height:300px;"></div>
+      </div>
     </div>
   </div>
 
@@ -424,6 +488,161 @@ setInterval(tick, 800);
 // no listener needed. (An earlier version wiped and recreated all cards on
 // "resize"; that turned out to fire spuriously in some environments and
 // could leave the visualization empty between ticks.)
+</script>
+
+<script>
+// "Ask a Specialist" -- independent of the live-training script above
+// (separate fetch calls, separate DOM elements), but served by the SAME
+// run_server.py process. If the /api/ routes ever aren't reachable (server
+// not started yet, or mid-restart), this section says so plainly instead
+// of silently failing.
+(async function initSpecialistPanel(){
+  const panelBody = document.getElementById("specialistBody");
+  const unavailable = document.getElementById("specialistUnavailable");
+  let specialties = [];
+
+  try{
+    const res = await fetch("/api/specialties", {cache:"no-store"});
+    if (!res.ok) throw new Error("router API not present on this server");
+    const data = await res.json();
+    specialties = data.specialties || [];
+    if (specialties.length === 0) throw new Error("no specialties trained yet -- run router/train_specialists.py");
+  }catch(e){
+    panelBody.hidden = true;
+    unavailable.hidden = false;
+    return;
+  }
+
+  const specialtySelect = document.getElementById("specialtySelect");
+  const hospitalSelect = document.getElementById("hospitalSelect");
+  const scaleNote = document.getElementById("scaleNote");
+  const featureFields = document.getElementById("featureFields");
+  const askBtn = document.getElementById("askBtn");
+  const resultCard = document.getElementById("resultCard");
+  const resultHeadline = document.getElementById("resultHeadline");
+  const resultSub = document.getElementById("resultSub");
+  const queryLog = document.getElementById("queryLog");
+
+  specialtySelect.innerHTML = specialties
+    .map(s => `<option value="${s.name}">${s.display_name}</option>`)
+    .join("");
+
+  let currentSchema = null;
+
+  async function loadSchema(name){
+    const res = await fetch(`/api/specialty/${encodeURIComponent(name)}`, {cache:"no-store"});
+    const schema = await res.json();
+    currentSchema = schema;
+    scaleNote.textContent = schema.scale_note || "";
+
+    hospitalSelect.innerHTML = Array.from({length: schema.num_hospitals}, (_, i) =>
+      `<option value="${i}">Hospital ${i}</option>`).join("");
+
+    featureFields.innerHTML = schema.feature_names.map(f => {
+      const r = (schema.feature_ranges || {})[f] || {};
+      if (r.options){
+        const opts = r.options.map(o =>
+          `<option value="${o.value}"${o.value === r.default ? " selected" : ""}>${o.label}</option>`
+        ).join("");
+        return `
+        <div class="feature-field">
+          <label>${f}</label>
+          <select data-feature="${f}">${opts}</select>
+        </div>
+      `;
+      }
+      const hint = (r.min !== undefined) ? ` (${r.min}–${r.max})` : "";
+      return `
+      <div class="feature-field">
+        <label title="valid range${hint}">${f}${hint}</label>
+        <input type="number" data-feature="${f}"
+          min="${r.min ?? ""}" max="${r.max ?? ""}" step="${r.step ?? "any"}"
+          value="${r.default ?? 0}">
+      </div>
+    `;
+    }).join("");
+  }
+
+  specialtySelect.addEventListener("change", () => loadSchema(specialtySelect.value));
+  await loadSchema(specialtySelect.value);
+
+  function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+
+  async function printTrace(lines){
+    queryLog.innerHTML = "";
+    for (const line of lines){
+      const div = document.createElement("div");
+      div.textContent = line;
+      queryLog.appendChild(div);
+      queryLog.scrollTop = queryLog.scrollHeight;
+      await sleep(140);
+    }
+  }
+
+  askBtn.addEventListener("click", async () => {
+    resultCard.hidden = true;
+
+    // Real validation against the field's actual valid range (not just the
+    // HTML min/max hint, which a plain button click doesn't enforce) --
+    // these are survey/clinical codes, not free-form numbers, so a value
+    // outside range (or non-numeric) is rejected before it ever reaches
+    // the model rather than silently coerced to 0.
+    const ranges = (currentSchema && currentSchema.feature_ranges) || {};
+    const patient_features = {};
+    const errors = [];
+    featureFields.querySelectorAll("[data-feature]").forEach(inp => {
+      const name = inp.dataset.feature;
+      const val = parseFloat(inp.value);
+      const r = ranges[name];
+      if (Number.isNaN(val)) {
+        errors.push(`${name}: enter a number`);
+      } else if (r && (val < r.min || val > r.max)) {
+        errors.push(`${name}: must be between ${r.min} and ${r.max} (got ${val})`);
+      } else {
+        patient_features[name] = val;
+      }
+    });
+    if (errors.length){
+      await printTrace(["Fix these fields before querying:", ...errors.map(e => "  " + e)]);
+      return;
+    }
+
+    askBtn.disabled = true;
+    askBtn.textContent = "Querying the federation…";
+
+    try{
+      const res = await fetch("/api/query", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          specialty: specialtySelect.value,
+          hospital_id: parseInt(hospitalSelect.value, 10),
+          patient_features,
+        }),
+      });
+      const result = await res.json();
+      await printTrace(result.trace || [result.message || "No response."]);
+
+      if (result.status === "ok"){
+        resultCard.hidden = false;
+        resultCard.className = "result-card " + result.prediction;
+        resultHeadline.textContent =
+          `${result.display_name}: ${result.prediction.toUpperCase()} (${(result.probability * 100).toFixed(1)}%)`;
+        resultSub.textContent =
+          `Decision threshold for Hospital ${result.hospital_id}: ${(result.threshold_used * 100).toFixed(1)}%. ` +
+          `This patient's profile most closely resembles Hospital ${result.most_similar_hospital}'s own patient population. ` +
+          `${result.scale_note}`;
+      } else {
+        resultCard.hidden = true;
+      }
+    }catch(e){
+      await printTrace(["Request failed: " + e.message]);
+    }finally{
+      askBtn.disabled = false;
+      askBtn.textContent = "Ask the federation";
+    }
+  });
+})();
 </script>
 
 </body>

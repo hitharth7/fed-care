@@ -99,6 +99,9 @@ def run_privacy_sweep(
     num_rounds: int = 10,
     local_epochs: int = 1,
     batch_size: int = 128,
+    use_pos_weight: bool = False,
+    per_client_threshold: bool = False,
+    results_filename: str = "privacy_sweep_step7_8.json",
 ) -> dict:
     """Steps 7+8 combined.
 
@@ -145,6 +148,8 @@ def run_privacy_sweep(
             epochs=num_rounds * local_epochs,
             dp_configs=dp_configs_local,
             return_models=True,
+            use_pos_weight=use_pos_weight,
+            per_client_threshold=per_client_threshold,
         )
         for i, model in enumerate(models):
             non_member_idx = np.concatenate(
@@ -173,6 +178,8 @@ def run_privacy_sweep(
                 local_epochs=local_epochs,
                 mu=mu,
                 dp_configs=dp_configs,
+                use_pos_weight=use_pos_weight,
+                per_client_threshold=per_client_threshold,
             )
             final_model = final_model.to(device)
             mean_acc = float(np.mean([m["accuracy"] for m in per_client]))
@@ -201,9 +208,9 @@ def run_privacy_sweep(
                 }
             )
 
-    with open(RESULTS_DIR / "privacy_sweep_step7_8.json", "w") as f:
+    with open(RESULTS_DIR / results_filename, "w") as f:
         json.dump(results, f, indent=2)
-    print(f"\nSaved to {RESULTS_DIR / 'privacy_sweep_step7_8.json'}")
+    print(f"\nSaved to {RESULTS_DIR / results_filename}")
     return results
 
 
@@ -271,5 +278,40 @@ def main():
     return results
 
 
+def main_corrected():
+    """Tier-1 priority item: re-run Steps 7-8 against corrected (pos_weight +
+    per-client threshold) models -- the original main()/privacy_sweep_step7_8.json
+    predate this correction (see PROJECT_GUIDE.md Sec 8.3/8.5) and are left
+    untouched as the documented "before" baseline. sanity_check_attack() is
+    skipped here -- it trains a synthetic overfit model unrelated to any
+    client's pos_weight/threshold setting, so re-running it would just
+    reproduce the same number for no reason.
+    """
+    device = get_device()
+    print(f"device: {device}")
+
+    RESULTS_DIR.mkdir(exist_ok=True)
+
+    fedprox_corrected_path = RESULTS_DIR / "fl_step6c_fedprox_corrected.json"
+    if fedprox_corrected_path.exists():
+        best_mu = json.loads(fedprox_corrected_path.read_text())["best_mu"]
+    else:
+        fedprox_path = RESULTS_DIR / "fl_step6_fedprox.json"
+        best_mu = json.loads(fedprox_path.read_text())["best_mu"] if fedprox_path.exists() else 0.001
+    print(f"\nUsing corrected FedProx mu={best_mu}")
+
+    results = run_privacy_sweep(
+        device,
+        best_mu=best_mu,
+        use_pos_weight=True,
+        per_client_threshold=True,
+        results_filename="privacy_sweep_step7_8_corrected.json",
+    )
+    plot_privacy_tradeoff(results, RESULTS_DIR / "privacy_tradeoff_corrected.png")
+    print(f"Saved plot to {RESULTS_DIR / 'privacy_tradeoff_corrected.png'}")
+    return results
+
+
 if __name__ == "__main__":
     main()
+    main_corrected()

@@ -16,6 +16,12 @@ demo/dashboard/index.html plus a live-updating dashboard_state.json --
 open http://localhost:8090 in a browser to watch the run visually instead
 of reading terminal logs. The dashboard is purely a read-only view of the
 real state below; it never influences training.
+
+This same server also answers the dashboard's "Ask a Specialist" section
+(GET /api/specialties, GET /api/specialty/<name>, POST /api/query) --
+one unified server rather than a separate process, at the cost of the
+specialist-query feature only being reachable while this live-training
+server is up (it exits after --rounds rounds finish).
 """
 import argparse
 import functools
@@ -33,6 +39,7 @@ import flwr as fl
 
 from fl.drift_controller import DriftAwareFedAvg
 from fl.strategies import weighted_average
+from router.specialist_router import answer_query, get_specialty_schema, list_specialties
 
 DASHBOARD_DIR = Path(__file__).resolve().parent / "dashboard"
 STATE_PATH = DASHBOARD_DIR / "dashboard_state.json"
@@ -109,12 +116,75 @@ def _write_state() -> None:
         payload["hospitals"] = sorted(_state["hospitals"].values(), key=lambda h: h["id"])
     tmp_path = STATE_PATH.with_suffix(".tmp")
     tmp_path.write_text(json.dumps(payload))
-    tmp_path.replace(STATE_PATH)  # atomic, so the dashboard never reads a half-written file
+    # tmp_path.replace(STATE_PATH) is atomic on POSIX but NOT lock-safe on
+    # Windows: if the dashboard's GET handler (a separate thread) has
+    # STATE_PATH open for reading at this exact instant, Windows refuses the
+    # replace with PermissionError (WinError 5) -- this actually happened,
+    # repeatedly, crashing the training round unrecovered and looking
+    # exactly like a hang. The reader holds the file open for microseconds,
+    # so a short retry clears it almost every time; this is the standard
+    # fix for this well-known Windows file-replace race, not a workaround
+    # for a one-off fluke.
+    for attempt in range(5):
+        try:
+            tmp_path.replace(STATE_PATH)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.05)
+
+
+class DashboardHandler(http.server.SimpleHTTPRequestHandler):
+    """Serves the dashboard's static files (default behavior) plus the
+    "Ask a Specialist" JSON routes, wrapping router/specialist_router.py
+    directly -- no query logic lives here, this is a thin HTTP adapter."""
+
+    def log_message(self, fmt, *args):
+        print(f"[dashboard] {self.address_string()} - {fmt % args}")
+
+    def _json(self, payload: dict, status: int = 200) -> None:
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path == "/api/specialties":
+            self._json({"specialties": list_specialties()})
+            return
+        if self.path.startswith("/api/specialty/"):
+            name = self.path[len("/api/specialty/") :]
+            schema = get_specialty_schema(name)
+            if schema is None:
+                self._json({"error": f"no trained specialty '{name}'"}, status=404)
+                return
+            self._json(schema)
+            return
+        super().do_GET()
+
+    def do_POST(self):
+        if self.path == "/api/query":
+            length = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(length) or b"{}")
+                specialty = body["specialty"]
+                hospital_id = int(body["hospital_id"])
+                patient_features = body["patient_features"]
+            except (KeyError, ValueError, json.JSONDecodeError) as e:
+                self._json({"status": "error", "message": f"bad request: {e}"}, status=400)
+                return
+            result = answer_query(specialty, hospital_id, patient_features)
+            self._json(result)
+            return
+        self._json({"error": "not found"}, status=404)
 
 
 def start_dashboard_server(port: int) -> None:
     DASHBOARD_DIR.mkdir(exist_ok=True)
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(DASHBOARD_DIR))
+    handler = functools.partial(DashboardHandler, directory=str(DASHBOARD_DIR))
     httpd = socketserver.ThreadingTCPServer(("0.0.0.0", port), handler)
     httpd.allow_reuse_address = True
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -215,23 +285,34 @@ def main():
     _init_state(args.num_hospitals, args.rounds, adaptive)
     if not args.no_dashboard:
         start_dashboard_server(args.dashboard_port)
-        print(f"Live dashboard: http://localhost:{args.dashboard_port}\n")
+        print(f"Live dashboard: http://localhost:{args.dashboard_port}")
+        print("(same page also serves \"Ask a Specialist\" -- available for as long as this server is up)\n")
 
     fl.server.start_server(
         server_address=args.address,
-        config=fl.server.ServerConfig(num_rounds=args.rounds),
+        # round_timeout: without this, a single unresponsive hospital (dead
+        # connection, or just starved of CPU by something else on the same
+        # machine) makes Flower's client manager wait up to its own default
+        # of 24h with zero error printed -- this is what actually happened
+        # once already in this project's history. 180s is generous for any
+        # real round in this pipeline; a round that still isn't done by then
+        # fails loudly instead of hanging silently.
+        config=fl.server.ServerConfig(num_rounds=args.rounds, round_timeout=180),
         strategy=make_narrated_strategy(args.num_hospitals, adaptive, args.base_mu, args.base_epsilon),
     )
     print("\nServer finished. The final global model is the product of every hospital's contribution -- the server never saw a single row of raw patient data from any of them.")
 
     if not args.no_dashboard:
-        # The dashboard polls every 800ms; without this pause the process
-        # (and its dashboard web server) can exit before the browser's next
-        # poll, so the very last round never gets displayed. Keep the
-        # dashboard reachable for a few seconds so the final "done" state
-        # is guaranteed to be seen.
-        print("Keeping the dashboard up for 5 more seconds so the final result is visible...")
-        time.sleep(5)
+        # Keep this process (and its dashboard/router HTTP server) running
+        # indefinitely after training -- "Ask a Specialist" lives on this
+        # same page/process, so it should stay usable after the 10 rounds
+        # finish, not just for a few seconds. Ctrl+C to stop.
+        print("Training done -- dashboard and \"Ask a Specialist\" stay up. Press Ctrl+C to stop.")
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            print("\nStopped.")
 
 
 if __name__ == "__main__":

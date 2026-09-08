@@ -1,0 +1,397 @@
+{
+  "local_corrected": {
+    "condition": "local_corrected",
+    "per_client": [
+      {
+        "accuracy": 0.7503595644133964,
+        "balanced_accuracy": 0.742879833497645,
+        "f1": 0.039525691699604744,
+        "auc": 0.8223792310220177,
+        "threshold": 0.5364488043141126,
+        "client_id": 0,
+        "n_train": 27578
+      },
+      {
+        "accuracy": 0.7615688972991571,
+        "balanced_accuracy": 0.7453442730837483,
+        "f1": 0.8138597904915391,
+        "auc": 0.8252554414746857,
+        "threshold": 0.48396690742678977,
+        "client_id": 1,
+        "n_train": 32938
+      },
+      {
+        "accuracy": 0.7139417815714598,
+        "balanced_accuracy": 0.7371977812592624,
+        "f1": 0.24319629415170815,
+        "auc": 0.813601219460558,
+        "threshold": 0.5741707897875177,
+        "client_id": 2,
+        "n_train": 25886
+      },
+      {
+        "accuracy": 0.6867983430389626,
+        "balanced_accuracy": 0.7641180128350262,
+        "f1": 0.1098788602627538,
+        "auc": 0.8362173923700678,
+        "threshold": 0.4869101332450033,
+        "client_id": 3,
+        "n_train": 94389
+      },
+      {
+        "accuracy": 0.740909090909091,
+        "balanced_accuracy": 0.7326873999740473,
+        "f1": 0.43564356435643564,
+        "auc": 0.808945023573684,
+        "threshold": 0.4637924495309442,
+        "client_id": 4,
+        "n_train": 2491
+      }
+    ],
+    "mean_accuracy": 0.7307155354464134,
+    "mean_balanced_accuracy": 0.7444454601299458,
+    "mean_auc": 0.8212796615802025,
+    "worst_client_id": 3,
+    "worst_client_accuracy": 0.6867983430389626,
+    "worst_client_auc": 0.808945023573684
+  },
+  "fedavg_corrected": {
+    "condition": "fedavg_corrected",
+    "per_client": [
+      {
+        "accuracy": 0.6846106431066366,
+        "balanced_accuracy": 0.782786236779007,
+        "f1": 0.03761755485893417,
+        "auc": 0.8384330765204902,
+        "threshold": 0.4995063360980408,
+        "client_id": 0,
+        "n_val": 4867
+      },
+      {
+        "accuracy": 0.7581283330466196,
+        "balanced_accuracy": 0.7435213513164132,
+        "f1": 0.810307609282245,
+        "auc": 0.8214478128986683,
+        "threshold": 0.5253100215190619,
+        "client_id": 1,
+        "n_val": 5813
+      },
+      {
+        "accuracy": 0.7246662289341212,
+        "balanced_accuracy": 0.7497103781174578,
+        "f1": 0.2538552787663108,
+        "auc": 0.8270229072278443,
+        "threshold": 0.5502813287715816,
+        "client_id": 2,
+        "n_val": 4569
+      },
+      {
+        "accuracy": 0.6828360449060455,
+        "balanced_accuracy": 0.7697801829207329,
+        "f1": 0.11045630577538307,
+        "auc": 0.8362292449988358,
+        "threshold": 0.495268137404068,
+        "client_id": 3,
+        "n_val": 16657
+      },
+      {
+        "accuracy": 0.7090909090909091,
+        "balanced_accuracy": 0.721095203079718,
+        "f1": 0.41284403669724773,
+        "auc": 0.8220943812448636,
+        "threshold": 0.5100036369496255,
+        "client_id": 4,
+        "n_val": 440
+      }
+    ],
+    "mean_accuracy": 0.7118664318168665,
+    "mean_balanced_accuracy": 0.7533786704426657,
+    "mean_auc": 0.8290454845781404,
+    "worst_client_id": 3,
+    "worst_client_accuracy": 0.6828360449060455,
+    "worst_client_auc": 0.8214478128986683
+  },
+  "fedprox_corrected_best": {
+    "condition": "fedprox_corrected_mu0.1",
+    "per_client": [
+      {
+        "accuracy": 0.7248818574070269,
+        "balanced_accuracy": 0.7738586433952849,
+        "f1": 0.04014336917562724,
+        "auc": 0.8369238446464867,
+        "threshold": 0.5664478185248735,
+        "client_id": 0,
+        "n_val": 4867
+      },
+      {
+        "accuracy": 0.7651814897643213,
+        "balanced_accuracy": 0.7412660234438146,
+        "f1": 0.8200395517468688,
+        "auc": 0.8205969724390891,
+        "threshold": 0.493644772172723,
+        "client_id": 1,
+        "n_val": 5813
+      },
+      {
+        "accuracy": 0.7097833223900197,
+        "balanced_accuracy": 0.7571080154126265,
+        "f1": 0.2516930022573363,
+        "auc": 0.8251700046576619,
+        "threshold": 0.5450265936441158,
+        "client_id": 2,
+        "n_val": 4569
+      },
+      {
+        "accuracy": 0.7050489283784596,
+        "balanced_accuracy": 0.7606407579490018,
+        "f1": 0.11269640599602673,
+        "auc": 0.8334615352363334,
+        "threshold": 0.5376457531859528,
+        "client_id": 3,
+        "n_val": 16657
+      },
+      {
+        "accuracy": 0.7363636363636363,
+        "balanced_accuracy": 0.7506812578398719,
+        "f1": 0.44761904761904764,
+        "auc": 0.8245598858082097,
+        "threshold": 0.5369822248981224,
+        "client_id": 4,
+        "n_val": 440
+      }
+    ],
+    "mean_accuracy": 0.7282518468606928,
+    "mean_balanced_accuracy": 0.75671093960812,
+    "mean_auc": 0.8281424485575561,
+    "worst_client_id": 3,
+    "worst_client_accuracy": 0.7050489283784596,
+    "worst_client_auc": 0.8205969724390891
+  },
+  "best_mu": 0.1,
+  "mu_grid": {
+    "0.001": {
+      "condition": "fedprox_corrected_mu0.001",
+      "per_client": [
+        {
+          "accuracy": 0.6724881857407027,
+          "balanced_accuracy": 0.762079940604423,
+          "f1": 0.035108958837772396,
+          "auc": 0.8441535521719551,
+          "threshold": 0.48539693152634933,
+          "client_id": 0,
+          "n_val": 4867
+        },
+        {
+          "accuracy": 0.7662136590400825,
+          "balanced_accuracy": 0.7453050346616943,
+          "f1": 0.8196416721964167,
+          "auc": 0.8227346503340816,
+          "threshold": 0.4956900417683412,
+          "client_id": 1,
+          "n_val": 5813
+        },
+        {
+          "accuracy": 0.7231341650251696,
+          "balanced_accuracy": 0.7488952872930517,
+          "f1": 0.2528056704075605,
+          "auc": 0.8297840538595078,
+          "threshold": 0.5442053416296465,
+          "client_id": 2,
+          "n_val": 4569
+        },
+        {
+          "accuracy": 0.7200576334273879,
+          "balanced_accuracy": 0.769602393489214,
+          "f1": 0.11835885800718472,
+          "auc": 0.835400528546613,
+          "threshold": 0.5389286807446023,
+          "client_id": 3,
+          "n_val": 16657
+        },
+        {
+          "accuracy": 0.7045454545454546,
+          "balanced_accuracy": 0.7184566806522774,
+          "f1": 0.4090909090909091,
+          "auc": 0.8214023097884856,
+          "threshold": 0.4953862949486953,
+          "client_id": 4,
+          "n_val": 440
+        }
+      ],
+      "mean_accuracy": 0.7172878195557595,
+      "mean_balanced_accuracy": 0.7488678673401321,
+      "mean_auc": 0.8306950189401286,
+      "worst_client_id": 0,
+      "worst_client_accuracy": 0.6724881857407027,
+      "worst_client_auc": 0.8214023097884856
+    },
+    "0.01": {
+      "condition": "fedprox_corrected_mu0.01",
+      "per_client": [
+        {
+          "accuracy": 0.6500924594205876,
+          "balanced_accuracy": 0.7654057277783863,
+          "f1": 0.03403289846851957,
+          "auc": 0.8404109005489222,
+          "threshold": 0.47309416649763913,
+          "client_id": 0,
+          "n_val": 4867
+        },
+        {
+          "accuracy": 0.7593325305350077,
+          "balanced_accuracy": 0.7432834398189678,
+          "f1": 0.8119370883183223,
+          "auc": 0.822639133176902,
+          "threshold": 0.5303495493019047,
+          "client_id": 1,
+          "n_val": 5813
+        },
+        {
+          "accuracy": 0.7191945721164369,
+          "balanced_accuracy": 0.7519045602743786,
+          "f1": 0.25276645311589985,
+          "auc": 0.8289579540161748,
+          "threshold": 0.5566699913323824,
+          "client_id": 2,
+          "n_val": 4569
+        },
+        {
+          "accuracy": 0.7030077444918053,
+          "balanced_accuracy": 0.7672859705512972,
+          "f1": 0.11391724879097259,
+          "auc": 0.8360273471591426,
+          "threshold": 0.5322200131476225,
+          "client_id": 3,
+          "n_val": 16657
+        },
+        {
+          "accuracy": 0.7,
+          "balanced_accuracy": 0.7502054587136122,
+          "f1": 0.43103448275862066,
+          "auc": 0.8285825511484061,
+          "threshold": 0.49120987134512945,
+          "client_id": 4,
+          "n_val": 440
+        }
+      ],
+      "mean_accuracy": 0.7063254613127675,
+      "mean_balanced_accuracy": 0.7556170314273285,
+      "mean_auc": 0.8313235772099095,
+      "worst_client_id": 0,
+      "worst_client_accuracy": 0.6500924594205876,
+      "worst_client_auc": 0.822639133176902
+    },
+    "0.1": {
+      "condition": "fedprox_corrected_mu0.1",
+      "per_client": [
+        {
+          "accuracy": 0.7248818574070269,
+          "balanced_accuracy": 0.7738586433952849,
+          "f1": 0.04014336917562724,
+          "auc": 0.8369238446464867,
+          "threshold": 0.5664478185248735,
+          "client_id": 0,
+          "n_val": 4867
+        },
+        {
+          "accuracy": 0.7651814897643213,
+          "balanced_accuracy": 0.7412660234438146,
+          "f1": 0.8200395517468688,
+          "auc": 0.8205969724390891,
+          "threshold": 0.493644772172723,
+          "client_id": 1,
+          "n_val": 5813
+        },
+        {
+          "accuracy": 0.7097833223900197,
+          "balanced_accuracy": 0.7571080154126265,
+          "f1": 0.2516930022573363,
+          "auc": 0.8251700046576619,
+          "threshold": 0.5450265936441158,
+          "client_id": 2,
+          "n_val": 4569
+        },
+        {
+          "accuracy": 0.7050489283784596,
+          "balanced_accuracy": 0.7606407579490018,
+          "f1": 0.11269640599602673,
+          "auc": 0.8334615352363334,
+          "threshold": 0.5376457531859528,
+          "client_id": 3,
+          "n_val": 16657
+        },
+        {
+          "accuracy": 0.7363636363636363,
+          "balanced_accuracy": 0.7506812578398719,
+          "f1": 0.44761904761904764,
+          "auc": 0.8245598858082097,
+          "threshold": 0.5369822248981224,
+          "client_id": 4,
+          "n_val": 440
+        }
+      ],
+      "mean_accuracy": 0.7282518468606928,
+      "mean_balanced_accuracy": 0.75671093960812,
+      "mean_auc": 0.8281424485575561,
+      "worst_client_id": 3,
+      "worst_client_accuracy": 0.7050489283784596,
+      "worst_client_auc": 0.8205969724390891
+    },
+    "1.0": {
+      "condition": "fedprox_corrected_mu1.0",
+      "per_client": [
+        {
+          "accuracy": 0.7526196835833162,
+          "balanced_accuracy": 0.7586202699577658,
+          "f1": 0.041401273885350316,
+          "auc": 0.8400335925804213,
+          "threshold": 0.6007438331480003,
+          "client_id": 0,
+          "n_val": 4867
+        },
+        {
+          "accuracy": 0.7557199380698435,
+          "balanced_accuracy": 0.7434170854927523,
+          "f1": 0.8072747014115093,
+          "auc": 0.8152475546171415,
+          "threshold": 0.5210902747365098,
+          "client_id": 1,
+          "n_val": 5813
+        },
+        {
+          "accuracy": 0.7010286714817247,
+          "balanced_accuracy": 0.7439416521996867,
+          "f1": 0.24195338512763595,
+          "auc": 0.8163695642969048,
+          "threshold": 0.5082042605433632,
+          "client_id": 2,
+          "n_val": 4569
+        },
+        {
+          "accuracy": 0.7039082667947409,
+          "balanced_accuracy": 0.761338692334139,
+          "f1": 0.11263044260525369,
+          "auc": 0.8234842019778248,
+          "threshold": 0.5244791596942212,
+          "client_id": 3,
+          "n_val": 16657
+        },
+        {
+          "accuracy": 0.7431818181818182,
+          "balanced_accuracy": 0.7202517409922574,
+          "f1": 0.4263959390862944,
+          "auc": 0.8028461438643538,
+          "threshold": 0.584629907488224,
+          "client_id": 4,
+          "n_val": 440
+        }
+      ],
+      "mean_accuracy": 0.7312916756222887,
+      "mean_balanced_accuracy": 0.7455138881953203,
+      "mean_auc": 0.8195962114673293,
+      "worst_client_id": 2,
+      "worst_client_accuracy": 0.7010286714817247,
+      "worst_client_auc": 0.8028461438643538
+    }
+  }
+}

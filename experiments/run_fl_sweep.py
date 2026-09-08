@@ -60,15 +60,28 @@ def make_loader(X: np.ndarray, y: np.ndarray, idx: np.ndarray, batch_size: int, 
     return torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=shuffle)
 
 
-def prepare_data(alpha: float, num_clients: int = NUM_CLIENTS, batch_size: int = 128):
-    """Returns (splits, client_loaders[(train, val)], input_dim).
+def prepare_data(
+    alpha: float,
+    num_clients: int = NUM_CLIENTS,
+    batch_size: int = 128,
+    feature_loader=load_features_targets,
+    return_scaler: bool = False,
+):
+    """Returns (splits, client_loaders[(train, val)], input_dim), plus
+    (scaler, feature_names) if return_scaler=True.
+
+    `feature_loader` defaults to the diabetes dataset so every existing call
+    site is unaffected; pass `data.loaders.load_heart_features_targets` for
+    the second specialty. `return_scaler` defaults off (same return shape as
+    before) -- the router needs the fitted scaler to preprocess a new
+    patient's raw feature values the same way training data was scaled.
 
     Feature scaling is fit once on the pooled training pool (all clients'
     train+val, excluding the global test set) -- a deliberate simplification:
     a real deployment would need federated feature statistics, but that's a
     separate (solved) problem and out of scope here.
     """
-    X_df, y_s = load_features_targets()
+    X_df, y_s = feature_loader()
     splits = build_experiment_splits(y_s, num_clients, alpha, seed=SEED)
 
     X = X_df.values.astype(np.float32)
@@ -87,6 +100,8 @@ def prepare_data(alpha: float, num_clients: int = NUM_CLIENTS, batch_size: int =
         )
         for c in splits["clients"]
     ]
+    if return_scaler:
+        return splits, client_loaders, X.shape[1], scaler, list(X_df.columns)
     return splits, client_loaders, X.shape[1]
 
 
@@ -447,8 +462,80 @@ def run_step5c_corrected(device: torch.device, alpha: float = 0.5, num_rounds: i
     return result
 
 
+def run_step6c_fedprox_corrected(
+    device: torch.device, alpha: float = 0.5, num_rounds: int = 10, mus=(0.001, 0.01, 0.1, 1.0)
+) -> dict:
+    """Tier-1 gating experiment (see conversation/priority list, not in the
+    original plan docs): does FedProx's proximal term, once evaluated FAIRLY
+    (pos_weight + per-client threshold -- same correction as
+    run_step5c_corrected), close the remaining gap for clients 1/4 that
+    corrected vanilla FedAvg does NOT close? If yes, FedPer/Ditto is not
+    needed. If no, it's the next real step. mu is selected by mean
+    BALANCED accuracy here (not mean AUC, unlike the uncorrected
+    run_step6_fedprox) -- balanced accuracy is exactly the metric this
+    correction was built to make trustworthy, so it should also be the
+    selection criterion now that it's available.
+    """
+    _, client_loaders, input_dim = prepare_data(alpha=alpha)
+
+    grid_results = {}
+    for mu in mus:
+        print(f"\n>>> FedProx (corrected) mu={mu}")
+        _, metrics, _ = run_fl_condition(
+            client_loaders,
+            input_dim,
+            device,
+            num_rounds=num_rounds,
+            mu=mu,
+            use_pos_weight=True,
+            per_client_threshold=True,
+        )
+        grid_results[str(mu)] = summarize(f"fedprox_corrected_mu{mu}", metrics)
+
+    best_mu = max(grid_results, key=lambda k: grid_results[k]["mean_balanced_accuracy"])
+    print(f"\nBest corrected mu by mean balanced accuracy: {best_mu}")
+
+    step5c_path = RESULTS_DIR / "fl_step5c_corrected.json"
+    step5c = json.loads(step5c_path.read_text()) if step5c_path.exists() else {}
+
+    comparison = {
+        "local_corrected": step5c.get("local_corrected"),
+        "fedavg_corrected": step5c.get("fedavg_corrected"),
+        "fedprox_corrected_best": grid_results[best_mu],
+        "best_mu": float(best_mu),
+        "mu_grid": grid_results,
+    }
+
+    local_pc = {m["client_id"]: m for m in comparison["local_corrected"]["per_client"]} if comparison["local_corrected"] else {}
+    fedavg_pc = {m["client_id"]: m for m in comparison["fedavg_corrected"]["per_client"]} if comparison["fedavg_corrected"] else {}
+    fedprox_pc = {m["client_id"]: m for m in comparison["fedprox_corrected_best"]["per_client"]}
+
+    print(f"\n{'client':>7} {'local_bal':>10} {'fedavg_bal':>11} {'fedprox_bal':>12}")
+    print("-" * 45)
+    for cid in sorted(fedprox_pc):
+        lb = local_pc.get(cid, {}).get("balanced_accuracy")
+        fb = fedavg_pc.get(cid, {}).get("balanced_accuracy")
+        pb = fedprox_pc[cid]["balanced_accuracy"]
+        print(f"{cid:>7} {lb if lb is None else round(lb, 4):>10} {fb if fb is None else round(fb, 4):>11} {pb:>12.4f}")
+
+    if local_pc and fedavg_pc:
+        for cid in (1, 4):
+            if cid in fedprox_pc and cid in fedavg_pc:
+                verdict = (
+                    "closes the gap" if fedprox_pc[cid]["balanced_accuracy"] > fedavg_pc[cid]["balanced_accuracy"]
+                    else "does NOT close the gap"
+                )
+                print(f"client {cid}: corrected FedProx vs corrected FedAvg -> {verdict}")
+
+    with open(RESULTS_DIR / "fl_step6c_fedprox_corrected.json", "w") as f:
+        json.dump(comparison, f, indent=2)
+    print(f"Saved to {RESULTS_DIR / 'fl_step6c_fedprox_corrected.json'}")
+    return comparison
+
+
 if __name__ == "__main__":
     main()
     device = get_device()
     run_step6_fedprox(device)
     run_step5c_corrected(device)
+    run_step6c_fedprox_corrected(device)

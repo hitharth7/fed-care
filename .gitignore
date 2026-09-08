@@ -13,6 +13,7 @@ results/raw/
 demo/hospital_data/
 demo/dashboard/dashboard_state.json
 demo/dashboard/*.tmp
+router/artifacts/
 *.pt
 *.ckpt
 

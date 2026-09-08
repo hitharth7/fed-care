@@ -1,0 +1,397 @@
+{
+  "local_corrected": {
+    "condition": "heart_local_corrected",
+    "per_client": [
+      {
+        "accuracy": 1.0,
+        "balanced_accuracy": 1.0,
+        "f1": 1.0,
+        "auc": 1.0,
+        "threshold": 0.41481113185355406,
+        "client_id": 0,
+        "n_train": 37
+      },
+      {
+        "accuracy": 1.0,
+        "balanced_accuracy": 1.0,
+        "f1": 0.0,
+        "auc": 0.5,
+        "threshold": 0.4901836051833098,
+        "client_id": 1,
+        "n_train": 41
+      },
+      {
+        "accuracy": 0.8235294117647058,
+        "balanced_accuracy": 0.5,
+        "f1": 0.9032258064516129,
+        "auc": 0.9285714285714286,
+        "threshold": 0.2770955877064459,
+        "client_id": 2,
+        "n_train": 92
+      },
+      {
+        "accuracy": 0.5,
+        "balanced_accuracy": 0.5,
+        "f1": 0.0,
+        "auc": 0.5,
+        "threshold": 0.33351023839855926,
+        "client_id": 3,
+        "n_train": 8
+      },
+      {
+        "accuracy": 0.8333333333333334,
+        "balanced_accuracy": 0.8333333333333334,
+        "f1": 0.0,
+        "auc": 0.5,
+        "threshold": 0.4931757999034079,
+        "client_id": 4,
+        "n_train": 34
+      }
+    ],
+    "mean_accuracy": 0.8313725490196078,
+    "mean_balanced_accuracy": 0.7666666666666667,
+    "mean_auc": 0.6857142857142857,
+    "worst_client_id": 3,
+    "worst_client_accuracy": 0.5,
+    "worst_client_auc": 0.5
+  },
+  "fedavg_corrected": {
+    "condition": "heart_fedavg_corrected",
+    "per_client": [
+      {
+        "accuracy": 0.8571428571428571,
+        "balanced_accuracy": 0.9166666666666667,
+        "f1": 0.6666666666666666,
+        "auc": 0.8333333333333334,
+        "threshold": 0.558327642909246,
+        "client_id": 0,
+        "n_val": 7
+      },
+      {
+        "accuracy": 1.0,
+        "balanced_accuracy": 1.0,
+        "f1": 0.0,
+        "auc": 0.5,
+        "threshold": 0.8376862587281808,
+        "client_id": 1,
+        "n_val": 8
+      },
+      {
+        "accuracy": 0.8235294117647058,
+        "balanced_accuracy": 0.5,
+        "f1": 0.9032258064516129,
+        "auc": 0.7857142857142857,
+        "threshold": 0.21574249879386856,
+        "client_id": 2,
+        "n_val": 17
+      },
+      {
+        "accuracy": 0.5,
+        "balanced_accuracy": 0.5,
+        "f1": 0.0,
+        "auc": 0.5,
+        "threshold": 0.2254614544362578,
+        "client_id": 3,
+        "n_val": 2
+      },
+      {
+        "accuracy": 1.0,
+        "balanced_accuracy": 1.0,
+        "f1": 0.0,
+        "auc": 0.5,
+        "threshold": 0.8223657091412712,
+        "client_id": 4,
+        "n_val": 6
+      }
+    ],
+    "mean_accuracy": 0.8361344537815126,
+    "mean_balanced_accuracy": 0.7833333333333334,
+    "mean_auc": 0.6238095238095238,
+    "worst_client_id": 3,
+    "worst_client_accuracy": 0.5,
+    "worst_client_auc": 0.5
+  },
+  "fedprox_corrected_best": {
+    "condition": "heart_fedprox_corrected_mu0.001",
+    "per_client": [
+      {
+        "accuracy": 0.8571428571428571,
+        "balanced_accuracy": 0.9166666666666667,
+        "f1": 0.6666666666666666,
+        "auc": 1.0,
+        "threshold": 0.5201696075973794,
+        "client_id": 0,
+        "n_val": 7
+      },
+      {
+        "accuracy": 1.0,
+        "balanced_accuracy": 1.0,
+        "f1": 0.0,
+        "auc": 0.5,
+        "threshold": 0.8093844462399507,
+        "client_id": 1,
+        "n_val": 8
+      },
+      {
+        "accuracy": 0.8235294117647058,
+        "balanced_accuracy": 0.5,
+        "f1": 0.9032258064516129,
+        "auc": 0.8571428571428571,
+        "threshold": 0.2180096865988257,
+        "client_id": 2,
+        "n_val": 17
+      },
+      {
+        "accuracy": 0.5,
+        "balanced_accuracy": 0.5,
+        "f1": 0.0,
+        "auc": 0.5,
+        "threshold": 0.6924709431451169,
+        "client_id": 3,
+        "n_val": 2
+      },
+      {
+        "accuracy": 1.0,
+        "balanced_accuracy": 1.0,
+        "f1": 0.0,
+        "auc": 0.5,
+        "threshold": 0.8324282676778246,
+        "client_id": 4,
+        "n_val": 6
+      }
+    ],
+    "mean_accuracy": 0.8361344537815126,
+    "mean_balanced_accuracy": 0.7833333333333334,
+    "mean_auc": 0.6714285714285715,
+    "worst_client_id": 3,
+    "worst_client_accuracy": 0.5,
+    "worst_client_auc": 0.5
+  },
+  "best_mu": 0.001,
+  "mu_grid": {
+    "0.001": {
+      "condition": "heart_fedprox_corrected_mu0.001",
+      "per_client": [
+        {
+          "accuracy": 0.8571428571428571,
+          "balanced_accuracy": 0.9166666666666667,
+          "f1": 0.6666666666666666,
+          "auc": 1.0,
+          "threshold": 0.5201696075973794,
+          "client_id": 0,
+          "n_val": 7
+        },
+        {
+          "accuracy": 1.0,
+          "balanced_accuracy": 1.0,
+          "f1": 0.0,
+          "auc": 0.5,
+          "threshold": 0.8093844462399507,
+          "client_id": 1,
+          "n_val": 8
+        },
+        {
+          "accuracy": 0.8235294117647058,
+          "balanced_accuracy": 0.5,
+          "f1": 0.9032258064516129,
+          "auc": 0.8571428571428571,
+          "threshold": 0.2180096865988257,
+          "client_id": 2,
+          "n_val": 17
+        },
+        {
+          "accuracy": 0.5,
+          "balanced_accuracy": 0.5,
+          "f1": 0.0,
+          "auc": 0.5,
+          "threshold": 0.6924709431451169,
+          "client_id": 3,
+          "n_val": 2
+        },
+        {
+          "accuracy": 1.0,
+          "balanced_accuracy": 1.0,
+          "f1": 0.0,
+          "auc": 0.5,
+          "threshold": 0.8324282676778246,
+          "client_id": 4,
+          "n_val": 6
+        }
+      ],
+      "mean_accuracy": 0.8361344537815126,
+      "mean_balanced_accuracy": 0.7833333333333334,
+      "mean_auc": 0.6714285714285715,
+      "worst_client_id": 3,
+      "worst_client_accuracy": 0.5,
+      "worst_client_auc": 0.5
+    },
+    "0.01": {
+      "condition": "heart_fedprox_corrected_mu0.01",
+      "per_client": [
+        {
+          "accuracy": 1.0,
+          "balanced_accuracy": 1.0,
+          "f1": 1.0,
+          "auc": 1.0,
+          "threshold": 0.6571805580129575,
+          "client_id": 0,
+          "n_val": 7
+        },
+        {
+          "accuracy": 1.0,
+          "balanced_accuracy": 1.0,
+          "f1": 0.0,
+          "auc": 0.5,
+          "threshold": 0.872999998073482,
+          "client_id": 1,
+          "n_val": 8
+        },
+        {
+          "accuracy": 0.8235294117647058,
+          "balanced_accuracy": 0.5,
+          "f1": 0.9032258064516129,
+          "auc": 0.8095238095238095,
+          "threshold": 0.2461825520924138,
+          "client_id": 2,
+          "n_val": 17
+        },
+        {
+          "accuracy": 0.5,
+          "balanced_accuracy": 0.5,
+          "f1": 0.0,
+          "auc": 0.5,
+          "threshold": 0.218715205415035,
+          "client_id": 3,
+          "n_val": 2
+        },
+        {
+          "accuracy": 0.8333333333333334,
+          "balanced_accuracy": 0.8333333333333334,
+          "f1": 0.0,
+          "auc": 0.5,
+          "threshold": 0.8173422757444069,
+          "client_id": 4,
+          "n_val": 6
+        }
+      ],
+      "mean_accuracy": 0.8313725490196078,
+      "mean_balanced_accuracy": 0.7666666666666667,
+      "mean_auc": 0.6619047619047619,
+      "worst_client_id": 3,
+      "worst_client_accuracy": 0.5,
+      "worst_client_auc": 0.5
+    },
+    "0.1": {
+      "condition": "heart_fedprox_corrected_mu0.1",
+      "per_client": [
+        {
+          "accuracy": 0.8571428571428571,
+          "balanced_accuracy": 0.5,
+          "f1": 0.0,
+          "auc": 1.0,
+          "threshold": 0.7454618000732592,
+          "client_id": 0,
+          "n_val": 7
+        },
+        {
+          "accuracy": 1.0,
+          "balanced_accuracy": 1.0,
+          "f1": 0.0,
+          "auc": 0.5,
+          "threshold": 0.7759693875504499,
+          "client_id": 1,
+          "n_val": 8
+        },
+        {
+          "accuracy": 0.8823529411764706,
+          "balanced_accuracy": 0.6666666666666666,
+          "f1": 0.9333333333333333,
+          "auc": 0.9047619047619048,
+          "threshold": 0.35123451340662776,
+          "client_id": 2,
+          "n_val": 17
+        },
+        {
+          "accuracy": 0.0,
+          "balanced_accuracy": 0.0,
+          "f1": 0.0,
+          "auc": 0.5,
+          "threshold": 0.3231467766622502,
+          "client_id": 3,
+          "n_val": 2
+        },
+        {
+          "accuracy": 0.8333333333333334,
+          "balanced_accuracy": 0.8333333333333334,
+          "f1": 0.0,
+          "auc": 0.5,
+          "threshold": 0.7651200978150917,
+          "client_id": 4,
+          "n_val": 6
+        }
+      ],
+      "mean_accuracy": 0.7145658263305322,
+      "mean_balanced_accuracy": 0.6,
+      "mean_auc": 0.680952380952381,
+      "worst_client_id": 3,
+      "worst_client_accuracy": 0.0,
+      "worst_client_auc": 0.5
+    },
+    "1.0": {
+      "condition": "heart_fedprox_corrected_mu1.0",
+      "per_client": [
+        {
+          "accuracy": 0.7142857142857143,
+          "balanced_accuracy": 0.8333333333333333,
+          "f1": 0.5,
+          "auc": 1.0,
+          "threshold": 0.44376040289090507,
+          "client_id": 0,
+          "n_val": 7
+        },
+        {
+          "accuracy": 1.0,
+          "balanced_accuracy": 1.0,
+          "f1": 0.0,
+          "auc": 0.5,
+          "threshold": 0.7737673455386904,
+          "client_id": 1,
+          "n_val": 8
+        },
+        {
+          "accuracy": 0.7647058823529411,
+          "balanced_accuracy": 0.4642857142857143,
+          "f1": 0.8666666666666667,
+          "auc": 0.738095238095238,
+          "threshold": 0.2950112146258953,
+          "client_id": 2,
+          "n_val": 17
+        },
+        {
+          "accuracy": 0.5,
+          "balanced_accuracy": 0.5,
+          "f1": 0.0,
+          "auc": 0.5,
+          "threshold": 0.23336374153391498,
+          "client_id": 3,
+          "n_val": 2
+        },
+        {
+          "accuracy": 0.8333333333333334,
+          "balanced_accuracy": 0.8333333333333334,
+          "f1": 0.0,
+          "auc": 0.5,
+          "threshold": 0.739626383990798,
+          "client_id": 4,
+          "n_val": 6
+        }
+      ],
+      "mean_accuracy": 0.7624649859943978,
+      "mean_balanced_accuracy": 0.7261904761904762,
+      "mean_auc": 0.6476190476190476,
+      "worst_client_id": 3,
+      "worst_client_accuracy": 0.5,
+      "worst_client_auc": 0.5
+    }
+  }
+}

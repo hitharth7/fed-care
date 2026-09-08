@@ -57,12 +57,21 @@ def evaluate(model: nn.Module, loader, device: torch.device) -> dict:
     }
 
 
-def train_baseline(epochs: int = 20, batch_size: int = 256, lr: float = 1e-3) -> tuple:
+def train_baseline(
+    epochs: int = 20,
+    batch_size: int = 256,
+    lr: float = 1e-3,
+    feature_loader=load_features_targets,
+    results_filename: str = "baseline_metrics.json",
+) -> tuple:
+    """`feature_loader`/`results_filename` default to the diabetes dataset so
+    every existing call site reproduces its exact prior behavior unchanged;
+    pass `data.loaders.load_heart_features_targets` for the second specialty."""
     set_seed()
     device = get_device()
     print(f"device: {device}")
 
-    X, y = load_features_targets()
+    X, y = feature_loader()
     X = X.values.astype(np.float32)
     y = y.values.astype(np.float32)
 
@@ -121,7 +130,7 @@ def train_baseline(epochs: int = 20, batch_size: int = 256, lr: float = 1e-3) ->
     print("test metrics:", test_metrics)
 
     RESULTS_DIR.mkdir(exist_ok=True)
-    with open(RESULTS_DIR / "baseline_metrics.json", "w") as f:
+    with open(RESULTS_DIR / results_filename, "w") as f:
         json.dump({"history": history, "test": test_metrics}, f, indent=2)
 
     return model, history, test_metrics

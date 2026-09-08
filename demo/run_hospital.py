@@ -94,6 +94,16 @@ def main():
         action="store_true",
         help="don't report drift/overfit-gap metrics -- use only if the server was also started with --no-adaptive",
     )
+    parser.add_argument(
+        "--no-correction",
+        action="store_true",
+        help=(
+            "disable the pos_weight + per-client-threshold label-shift correction "
+            "(see PROJECT_GUIDE.md Sec 8.2b) and reproduce the original raw collapse "
+            "-- on by default since the correction is strictly a more honest evaluation, "
+            "not a tuning choice"
+        ),
+    )
     args = parser.parse_args()
 
     device = get_device()
@@ -116,6 +126,8 @@ def main():
         local_epochs=args.local_epochs,
         lr=args.lr,
         track_controller_metrics=not args.no_adaptive,
+        use_pos_weight=not args.no_correction,
+        per_client_threshold=not args.no_correction,
     )
 
     fl.client.start_client(server_address=args.server, client=client.to_client())
