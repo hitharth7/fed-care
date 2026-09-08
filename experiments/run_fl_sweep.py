@@ -27,6 +27,7 @@ from data.loaders import load_features_targets
 from data.partition import build_experiment_splits
 from fl.client import (
     DiabetesFlowerClient,
+    _split_for_calibration,
     compute_pos_weight,
     evaluate_model,
     make_criterion,
@@ -132,6 +133,7 @@ def run_fully_local(
     return_models: bool = False,
     use_pos_weight: bool = False,
     per_client_threshold: bool = False,
+    use_calibration_split: bool = False,
 ):
     """Each hospital trains alone -- no communication. Lower bound.
     If `dp_configs` is given, client i's local training is DP-SGD wrapped
@@ -142,14 +144,24 @@ def run_fully_local(
     retraining them.
     `use_pos_weight`/`per_client_threshold` default off so this reproduces
     the original results exactly; both must be passed to get a fair
-    comparison against a `run_fl_condition` call with the same flags on."""
+    comparison against a `run_fl_condition` call with the same flags on.
+    `use_calibration_split` fixes tune_threshold() picking its cutoff on
+    the same examples that fit the weights (see fl/client.py's
+    _split_for_calibration) -- incompatible with dp_configs for the same
+    reason as the FL client: shrinking the fit set desyncs it from the
+    sample_rate the epsilon in dp_configs was calibrated against."""
+    if use_calibration_split and dp_configs:
+        raise ValueError("use_calibration_split is incompatible with dp_configs -- see docstring.")
     per_client_metrics = []
     models = []
     for i, (train_loader, val_loader) in enumerate(client_loaders):
         set_seed(SEED + i)
         model = DiabetesMLP(input_dim=input_dim).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-        loader = train_loader
+        fit_loader, calib_loader = (
+            _split_for_calibration(train_loader) if use_calibration_split else (train_loader, train_loader)
+        )
+        loader = fit_loader
         dp_config = dp_configs[i] if dp_configs else None
         if dp_config is not None and dp_config.noise_multiplier > 0:
             model, optimizer, loader = wrap_for_round(model, optimizer, loader, dp_config)
@@ -163,7 +175,7 @@ def run_fully_local(
                 loss = criterion(model(xb), yb)
                 loss.backward()
                 optimizer.step()
-        threshold = tune_threshold(model, train_loader, device) if per_client_threshold else 0.5
+        threshold = tune_threshold(model, calib_loader, device) if per_client_threshold else 0.5
         _, n, metrics = evaluate_model(model, val_loader, device, threshold)
         metrics["client_id"] = i
         metrics["n_train"] = len(train_loader.dataset)
@@ -188,9 +200,18 @@ def run_fl_condition(
     dp_configs: list[DPConfig] | None = None,
     use_pos_weight: bool = False,
     per_client_threshold: bool = False,
+    strategy_factory=None,
+    track_controller_metrics: bool = False,
 ):
     """FedAvg (mu=0) or FedProx (mu>0) over `num_rounds` rounds, optionally
     with per-client DP-SGD (dp_configs[i], calibrated for num_rounds).
+
+    `strategy_factory` defaults to None = plain FedAvg, reproducing every
+    existing result unchanged. Pass a callable (num_clients, sink,
+    param_sink) -> strategy to benchmark a different strategy
+    (DriftAwareFedAvg, QFedAvg, FedAdam, ...) on this identical harness.
+    `track_controller_metrics` makes clients report drift/overfit_gap, which
+    DriftAwareFedAvg needs to actually control anything.
 
     `use_pos_weight`/`per_client_threshold` default off, reproducing the
     original results exactly. Pass both True to correct for label shift:
@@ -227,9 +248,13 @@ def run_fl_condition(
             dp_config=dp_config,
             use_pos_weight=use_pos_weight,
             per_client_threshold=per_client_threshold,
+            track_controller_metrics=track_controller_metrics,
         ).to_client()
 
-    strategy = make_fedavg_strategy(num_clients, per_round_sink=sink, param_sink=param_sink)
+    if strategy_factory is None:
+        strategy = make_fedavg_strategy(num_clients, per_round_sink=sink, param_sink=param_sink)
+    else:
+        strategy = strategy_factory(num_clients, sink, param_sink)
     history = fl.simulation.start_simulation(
         client_fn=client_fn,
         num_clients=num_clients,

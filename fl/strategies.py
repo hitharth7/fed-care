@@ -15,6 +15,44 @@ def weighted_average(metrics: list[tuple[int, Metrics]]) -> Metrics:
     return out
 
 
+def make_strategy(
+    strategy_cls,
+    num_clients: int,
+    per_round_sink: dict | None = None,
+    param_sink: dict | None = None,
+    **strategy_kwargs,
+):
+    """Same sinks/participation config as make_fedavg_strategy, but for ANY
+    Flower strategy class -- this is what lets the benchmark compare
+    DriftAwareFedAvg against FedAvg/FedProx/QFedAvg/FedAdam/... on an
+    identical harness, rather than each baseline being run differently.
+
+    Server-optimizer strategies (FedAdam/FedYogi/FedAdagrad/FedOpt) and
+    QFedAvg require `initial_parameters`; pass it through strategy_kwargs.
+    """
+
+    def evaluate_metrics_aggregation_fn(metrics: list[tuple[int, Metrics]]) -> Metrics:
+        if per_round_sink is not None:
+            per_round_sink["latest"] = metrics
+        return weighted_average(metrics)
+
+    def evaluate_fn(server_round, parameters, config):
+        if param_sink is not None:
+            param_sink["params"] = parameters
+        return None
+
+    return strategy_cls(
+        fraction_fit=1.0,
+        fraction_evaluate=1.0,
+        min_fit_clients=num_clients,
+        min_evaluate_clients=num_clients,
+        min_available_clients=num_clients,
+        evaluate_metrics_aggregation_fn=evaluate_metrics_aggregation_fn,
+        evaluate_fn=evaluate_fn if param_sink is not None else None,
+        **strategy_kwargs,
+    )
+
+
 def make_fedavg_strategy(
     num_clients: int, per_round_sink: dict | None = None, param_sink: dict | None = None
 ) -> fl.server.strategy.FedAvg:

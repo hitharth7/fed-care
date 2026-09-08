@@ -119,8 +119,8 @@
     margin-top:10px; padding-top:10px; border-top:1px dashed rgba(255,255,255,0.09);
   }
   .hospital .controller .stats{display:flex; gap:8px; margin-bottom:6px;}
-  .hospital .controller .stat{flex:1; text-align:center; padding:5px 4px; border-radius:8px; background:rgba(255,255,255,0.04);}
-  .hospital .controller .stat .label{font-size:8.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px;}
+  .hospital .controller .stat{flex:1; text-align:center; padding:5px 4px; border-radius:8px; background:rgba(255,255,255,0.04); cursor:help;}
+  .hospital .controller .stat .label{font-size:8.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.3px; border-bottom:1px dotted var(--muted); display:inline-block;}
   .hospital .controller .stat .val{font-size:12.5px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:1px;}
   .hospital .controller .stat.warn .val{color:var(--amber);}
   .hospital .controller .reason{font-size:10px; color:var(--muted); line-height:1.4;}
@@ -363,12 +363,12 @@ function ensureCards(stageEl, hospitals){
       const overfitWarn = c.overfit_gap !== null && c.overfit_gap > 0.10;
       ctrlEl.innerHTML = `
         <div class="stats">
-          <div class="stat${driftWarn ? " warn" : ""}"><div class="label">Drift</div><div class="val">${fmtPct(c.drift)}</div></div>
-          <div class="stat${overfitWarn ? " warn" : ""}"><div class="label">Overfit gap</div><div class="val">${fmtPct(c.overfit_gap)}</div></div>
+          <div class="stat${driftWarn ? " warn" : ""}" title="How far this hospital's model moved from the shared global model during its local training THIS round -- recalculated fresh every round, not a fixed property of the hospital. Above 20% triggers the controller to pull it back harder (raise mu) next round."><div class="label">Drift</div><div class="val">${fmtPct(c.drift)}</div></div>
+          <div class="stat${overfitWarn ? " warn" : ""}" title="This hospital's own training accuracy minus its own validation accuracy, this round. High gap means the model is memorizing this hospital's specific patients rather than learning something general -- above 10% triggers tighter privacy noise (lower target epsilon) next round."><div class="label">Overfit gap</div><div class="val">${fmtPct(c.overfit_gap)}</div></div>
         </div>
         <div class="stats">
-          <div class="stat"><div class="label">Stability pull (mu)</div><div class="val">${c.mu.toFixed(3)}</div></div>
-          <div class="stat"><div class="label">Target eps/round</div><div class="val">${c.target_epsilon.toFixed(2)}</div></div>
+          <div class="stat" title="Strength of the FedProx penalty holding this hospital's local training close to the shared global model -- higher = shorter leash, less allowed to drift. The controller raises this when drift is high, relaxes it when drift is low. Bounded between 0.001 and 2.0."><div class="label">Stability pull (mu)</div><div class="val">${c.mu.toFixed(3)}</div></div>
+          <div class="stat" title="The differential-privacy noise budget the controller wants to spend on THIS hospital NEXT round. Moves up or down based on that hospital's overfit gap -- lower value = more noise added = more privacy, at some cost to accuracy."><div class="label">Target eps/round</div><div class="val">${c.target_epsilon.toFixed(2)}</div></div>
         </div>
         <div class="stats">
           <div class="stat" style="flex:1 1 100%;" title="True composed privacy cost across every round so far -- always grows, unlike the per-round target above"><div class="label">Cumulative eps (all rounds)</div><div class="val">${c.cumulative_epsilon === null || c.cumulative_epsilon === undefined ? "—" : c.cumulative_epsilon.toFixed(2)}</div></div>
